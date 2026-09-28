@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from core import AllProvidersFailed, load_routers  # noqa: E402
+from core import AllProvidersFailed, load_routers, postprocess  # noqa: E402
 
 PAGE_PROMPT = ("children's coloring book page, {subject}, thick clean black outlines, "
                "pure white background, no shading, no gray, no color, simple shapes, "
@@ -59,6 +59,9 @@ def main() -> None:
         path = out / f"test_{r['provider']}_{r['seed']}.png"
         r["image"].save(path)
         print(f"[{r['provider']}] сохранено: {path}  размер {r['image'].size}")
+        clean = postprocess.process(r["image"])
+        path.with_suffix(".clean.svg").write_text(postprocess.to_svg(clean), encoding="utf-8")
+        print(f"очищенный вектор: {path.with_suffix('.clean.svg')}  ({len(clean.subpaths)} контуров)")
     except AllProvidersFailed as e:
         print(e)
 

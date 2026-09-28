@@ -1,6 +1,8 @@
 # Порядок в списке = приоритет. Первый живой провайдер отвечает, при ошибке — следующий.
 # Ключи НЕ пишем сюда, только имя переменной из .env. Нет ключа в .env — провайдер пропускается.
 # Названия моделей у провайдеров меняются: проверить актуальные — python scripts/check_router.py --models
+# json_mode: true  — для chat_json отправлять response_format=json_object (провайдер должен поддерживать)
+# extra_body: {...} — добавить поля в тело запроса (выключить thinking и т.п.)
 
 log_level: INFO
 timeout: 120
@@ -11,22 +13,30 @@ text_providers:
     base_url: https://generativelanguage.googleapis.com/v1beta/openai
     model: gemini-2.5-flash
     key_env: GEMINI_API_KEY
+    json_mode: true
+    # 2.5-flash «думает», и токены размышлений съедают max_tokens → пустой ответ. Выключаем.
+    extra_body: {reasoning_effort: none}
   - name: groq
     base_url: https://api.groq.com/openai/v1
     model: llama-3.3-70b-versatile
     key_env: GROQ_API_KEY
+    json_mode: true
   - name: cerebras
     base_url: https://api.cerebras.ai/v1
     model: gpt-oss-120b
     key_env: CEREBRAS_API_KEY
+    json_mode: true
+    extra_body: {reasoning_effort: low}
   - name: zai
     base_url: https://api.z.ai/api/paas/v4
     model: glm-4.5-flash
     key_env: ZAI_API_KEY
+    extra_body: {thinking: {type: disabled}}
   - name: mistral
     base_url: https://api.mistral.ai/v1
     model: mistral-small-latest
     key_env: MISTRAL_API_KEY
+    json_mode: true
   - name: openrouter
     base_url: https://openrouter.ai/api/v1
     model: meta-llama/llama-3.3-70b-instruct:free
@@ -59,3 +69,14 @@ image_providers:
   #   base_url: https://api.example.com/v1
   #   model: some-image-model
   #   key_env: MY_IMAGES_KEY
+
+# Постобработка страниц: картинка → чистые векторные линии → PDF для KDP
+postprocess:
+  upscale: 2          # увеличение перед порогом — точнее края
+  threshold: null     # null = авто (Otsu, не светлее 200: светло-серые тени уходят в белое)
+  close_gaps: 0       # >0 закрывает разрывы в контурах (px), чтобы области было удобно раскрашивать
+  smooth: 1.0         # сглаживание кривых: 0 — ломаные, 1.0 — норма, 1.33 — очень плавно
+book:
+  trim: [8.5, 11]     # формат в дюймах
+  margin: 0.5         # внешние поля, дюймы
+  blank_backs: true   # картинки только на правых страницах

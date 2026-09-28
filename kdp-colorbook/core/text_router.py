@@ -7,17 +7,23 @@ import re
 from .base import BadOutput, BaseRouter
 
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
+_DECODER = json.JSONDecoder()
 
 
 class TextRouter(BaseRouter):
     kind = "text"
 
-    def _call(self, p: dict, messages: list[dict], temperature: float, max_tokens: int) -> str:
+    def _call(self, p: dict, messages: list[dict], temperature: float, max_tokens: int,
+              json_mode: bool = False) -> str:
+        body = {"model": p["model"], "messages": messages,
+                "temperature": temperature, "max_tokens": max_tokens}
+        if json_mode and p.get("json_mode"):
+            body["response_format"] = {"type": "json_object"}
+        body.update(p.get("extra_body", {}))  # параметры провайдера из config.yaml (например, выключить thinking)
         r = self.client.post(
             p["base_url"].rstrip("/") + "/chat/completions",
             headers={"Authorization": f"Bearer {os.environ[p['key_env']]}", **p.get("headers", {})},
-            json={"model": p["model"], "messages": messages,
-                  "temperature": temperature, "max_tokens": max_tokens},
+            json=body,
         )
         r.raise_for_status()
         try:
@@ -45,13 +51,14 @@ class TextRouter(BaseRouter):
         messages = [{"role": "system", "content": sys_msg}, {"role": "user", "content": prompt}]
 
         def call(p):
-            raw = self._call(p, messages, temperature, max_tokens)
+            raw = self._call(p, messages, temperature, max_tokens, json_mode=True)
             cleaned = _FENCE.sub("", raw).strip()
             start = min((i for i in (cleaned.find("{"), cleaned.find("[")) if i >= 0), default=-1)
             if start < 0:
                 raise BadOutput(f"нет JSON в ответе: {raw[:120]}")
             try:
-                return json.loads(cleaned[start:])
+                # raw_decode: текст после JSON («Надеюсь, помог!») не ломает разбор
+                return _DECODER.raw_decode(cleaned[start:])[0]
             except json.JSONDecodeError as e:
                 raise BadOutput(f"невалидный JSON: {e}") from e
 

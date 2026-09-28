@@ -120,6 +120,30 @@ def test_image_too_small_rejected():
     assert r.generate("cat")["provider"] == "hf"
 
 
+def test_json_trailing_text_and_json_mode():
+    bodies = []
+
+    def handler(req):
+        import json as _j
+        bodies.append(_j.loads(req.content))
+        return ok_chat('{"themes": ["a"]}\n\nНадеюсь, это поможет!')
+
+    provs = text_providers()[:1]
+    provs[0].update(json_mode=True, extra_body={"reasoning_effort": "none"})
+    r = TextRouter(provs, new_state(), client=httpx.Client(transport=httpx.MockTransport(handler)))
+    assert r.chat_json("x")["data"] == {"themes": ["a"]}
+    assert bodies[0]["response_format"] == {"type": "json_object"}
+    assert bodies[0]["reasoning_effort"] == "none"
+    r.chat("x")  # обычный chat не просит JSON-режим
+    assert "response_format" not in bodies[1] and bodies[1]["reasoning_effort"] == "none"
+
+
+def test_auth_cooldown_is_full_day():
+    st = new_state()
+    assert st.failure("a", "auth", "401") == 24 * 3600
+    assert st.failure("b", "rate", "429", retry_after=10 ** 6) == 12 * 3600
+
+
 if __name__ == "__main__":
     tests = [v for k, v in dict(globals()).items() if k.startswith("test_")]
     for t in tests:

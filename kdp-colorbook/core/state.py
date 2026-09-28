@@ -65,12 +65,11 @@ class State:
             fails = self.db.execute("SELECT fails FROM provider WHERE name=?", (name,)).fetchone()[0] + 1
             base = BASE_COOLDOWN.get(kind, 30)
             if retry_after:
-                delay = retry_after
+                delay = min(retry_after, MAX_COOLDOWN)
             elif kind in ("rate", "server", "bad_output"):
-                delay = base * 2 ** (fails - 1)
+                delay = min(base * 2 ** (fails - 1), MAX_COOLDOWN)
             else:
-                delay = base
-            delay = min(delay, MAX_COOLDOWN)
+                delay = base  # auth/quota: фиксированная пауза, потолок MAX_COOLDOWN к ним не относится
             self.db.execute(
                 "UPDATE provider SET fails=?, cooldown_until=?, last_error=? WHERE name=?",
                 (fails, time.time() + delay, f"{kind}: {detail}"[:500], name),
