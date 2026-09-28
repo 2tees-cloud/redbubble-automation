@@ -112,3 +112,25 @@ profiles: {}
 safety:
   extra_terms: []         # свои запрещённые слова/бренды
   llm_required: true      # модерация недоступна → тема отклоняется (безопаснее для аккаунта)
+
+# Исследование ниш (core/research.py)
+research:
+  domain: www.amazon.com
+  seeds:                  # базовые фразы; подсказки Amazon раскручивают их в длинный хвост
+    - coloring book for kids
+    - coloring book for adults
+    - coloring book for toddlers
+    - coloring book for girls
+    - coloring book for boys
+    - animal coloring book
+    - mandala coloring book
+    - cute coloring book
+  alphabet: abcdefghiklmnoprstuvwz   # раскрутка «seed + буква»
+  llm_ideas: 25           # сколько идей тем предложит LLM (проверяются подсказками Amazon)
+  evaluate_top: 15        # сколько лучших кандидатов проверять выдачей Amazon
+  bsr_top: 5              # у скольких лидеров смотреть рейтинг продаж
+  repeat_days: 60         # не повторять похожие ниши
+  similar_max: 0.6
+  min_pages: 30           # иллюстраций в книге
+  max_pages: 50
+  season_lead: [30, 75]   # за сколько дней до праздника делать сезонную книгу
