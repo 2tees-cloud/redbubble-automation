@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
-from . import book, pipeline, postprocess, quality
+from . import book, cover, metadata, pipeline, postprocess, quality
 from .base import AllProvidersFailed, BadOutput
 from .image_router import ImageRouter
 from .state import State
@@ -13,7 +13,7 @@ from .text_router import TextRouter
 
 ROOT = Path(__file__).resolve().parent.parent
 
-__all__ = ["load_routers", "book", "pipeline", "postprocess", "quality", "TextRouter", "ImageRouter", "State", "AllProvidersFailed", "BadOutput"]
+__all__ = ["load_routers", "book", "cover", "metadata", "pipeline", "postprocess", "quality", "TextRouter", "ImageRouter", "State", "AllProvidersFailed", "BadOutput"]
 
 
 def load_routers(config_path: str | Path = ROOT / "config.yaml") -> tuple[TextRouter, ImageRouter]:

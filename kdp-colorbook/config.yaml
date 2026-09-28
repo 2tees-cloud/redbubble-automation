@@ -84,6 +84,7 @@ book:
   trim: [8.5, 11]     # формат в дюймах
   margin: 0.5         # внешние поля, дюймы
   blank_backs: true   # картинки только на правых страницах
+  author: ""          # имя автора для обложки и метаданных (или --author в make_cover.py)
 
 # Фильтр брака (core/quality.py). Для взрослых раскрасок поднять max_regions, max_ink, max_tiny.
 quality:

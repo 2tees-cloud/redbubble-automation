@@ -44,7 +44,11 @@ def _page_ops(page: VectorPage, x: float, y: float, w: float, h: float) -> bytes
     return "\n".join(out).encode()
 
 
-def _write_pdf(path: Path, size: tuple[float, float], contents: list[bytes], title: str) -> None:
+def _write_pdf(path: Path, size: tuple[float, float], contents: list[bytes], title: str,
+               images: dict[int, tuple[bytes, int, int]] | None = None) -> None:
+    """contents — операторы каждой страницы. images: {номер страницы: (JPEG, ширина, высота)},
+    картинка доступна на странице как /Im0."""
+    images = images or {}
     objs: list[bytes] = []  # objs[i] → объект номер i+1
 
     def add(body: bytes) -> int:
@@ -57,11 +61,18 @@ def _write_pdf(path: Path, size: tuple[float, float], contents: list[bytes], tit
     catalog = add(b"")  # заполним после pages
     pages = add(b"")
     kids = []
-    for data in contents:
+    for i, data in enumerate(contents):
         z = zlib.compress(data, 9)
         c = add(b"<< /Length %d /Filter /FlateDecode >>\nstream\n" % len(z) + z + b"\nendstream")
-        kids.append(add(b"<< /Type /Page /Parent %d 0 R /MediaBox [0 0 %.2f %.2f] /Contents %d 0 R "
-                        b"/Resources << >> >>" % (pages, size[0], size[1], c)))
+        res = b""
+        if i in images:
+            jpg, w, h = images[i]
+            im = add(b"<< /Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /DeviceRGB "
+                     b"/BitsPerComponent 8 /Filter /DCTDecode /Length %d >>\nstream\n" % (w, h, len(jpg))
+                     + jpg + b"\nendstream")
+            res = b"/XObject << /Im0 %d 0 R >>" % im
+        kids.append(add(b"<< /Type /Page /Parent %d 0 R /MediaBox [0 0 %.3f %.3f] /Contents %d 0 R "
+                        b"/Resources << %s >> >>" % (pages, size[0], size[1], c, res)))
     objs[catalog - 1] = b"<< /Type /Catalog /Pages %d 0 R >>" % pages
     objs[pages - 1] = b"<< /Type /Pages /Kids [%s] /Count %d >>" % (
         b" ".join(b"%d 0 R" % k for k in kids), len(kids))
@@ -92,8 +103,7 @@ def build_interior(pages: list[VectorPage], out_path: str | Path, *,
     """
     if not pages:
         raise ValueError("нет страниц")
-    count = len(pages) * 2 if blank_backs else len(pages)
-    count += count % 2  # в печатной книге чётное число страниц
+    count = page_count(len(pages), blank_backs)  # в печатной книге чётное число страниц
     if count < MIN_PAGES:
         log.warning("Страниц %d, KDP требует минимум %d — добавьте картинок", count, MIN_PAGES)
     gutter = max(gutter_inches(max(count, MIN_PAGES)), margin)
@@ -114,3 +124,20 @@ def build_interior(pages: list[VectorPage], out_path: str | Path, *,
     contents += [b""] * (count - len(contents))  # добиваем до чётного
     _write_pdf(Path(out_path), (W, H), contents, title)
     return {"path": str(out_path), "page_count": count, "gutter": gutter}
+
+
+def page_count(images: int, blank_backs: bool = True) -> int:
+    """Сколько страниц будет в интерьере (нужно для ширины корешка)."""
+    n = images * 2 if blank_backs else images
+    return n + n % 2
+
+
+def write_image_pdf(path: str | Path, img, size_in: tuple[float, float], title: str = "") -> None:
+    """Одна страница точного размера (дюймы) с картинкой на весь лист — для обложки.
+    Размер страницы задаётся в пунктах, поэтому не зависит от округления пикселей."""
+    import io
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, "JPEG", quality=95, subsampling=0, dpi=(300, 300))
+    W, H = size_in[0] * PT, size_in[1] * PT
+    _write_pdf(Path(path), (W, H), [f"q {W:.3f} 0 0 {H:.3f} 0 0 cm /Im0 Do Q".encode()], title,
+               {0: (buf.getvalue(), img.width, img.height)})
