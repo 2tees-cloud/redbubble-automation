@@ -1,0 +1,61 @@
+# Порядок в списке = приоритет. Первый живой провайдер отвечает, при ошибке — следующий.
+# Ключи НЕ пишем сюда, только имя переменной из .env. Нет ключа в .env — провайдер пропускается.
+# Названия моделей у провайдеров меняются: проверить актуальные — python scripts/check_router.py --models
+
+log_level: INFO
+timeout: 120
+state_db: data/router_state.db
+
+text_providers:
+  - name: gemini
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai
+    model: gemini-2.5-flash
+    key_env: GEMINI_API_KEY
+  - name: groq
+    base_url: https://api.groq.com/openai/v1
+    model: llama-3.3-70b-versatile
+    key_env: GROQ_API_KEY
+  - name: cerebras
+    base_url: https://api.cerebras.ai/v1
+    model: gpt-oss-120b
+    key_env: CEREBRAS_API_KEY
+  - name: zai
+    base_url: https://api.z.ai/api/paas/v4
+    model: glm-4.5-flash
+    key_env: ZAI_API_KEY
+  - name: mistral
+    base_url: https://api.mistral.ai/v1
+    model: mistral-small-latest
+    key_env: MISTRAL_API_KEY
+  - name: openrouter
+    base_url: https://openrouter.ai/api/v1
+    model: meta-llama/llama-3.3-70b-instruct:free
+    key_env: OPENROUTER_API_KEY
+  - name: xai
+    base_url: https://api.x.ai/v1
+    model: grok-3-mini
+    key_env: XAI_API_KEY
+
+image_providers:
+  - name: cloudflare_flux
+    type: cloudflare
+    model: "@cf/black-forest-labs/flux-1-schnell"
+    steps: 8
+    key_env: CF_API_TOKEN
+    account_env: CF_ACCOUNT_ID
+  - name: huggingface_flux
+    type: huggingface
+    model: black-forest-labs/FLUX.1-schnell
+    key_env: HF_TOKEN
+  - name: pollinations
+    type: pollinations
+    key_optional: true          # работает и без ключа, но с жёстким лимитом
+    key_env: POLLINATIONS_TOKEN
+    model: flux
+    url_template: "https://image.pollinations.ai/prompt/{prompt}?width={width}&height={height}&seed={seed}&model={model}&nologo=true"
+  # Пример любого OpenAI-совместимого генератора картинок:
+  # - name: my_images
+  #   type: openai_images
+  #   base_url: https://api.example.com/v1
+  #   model: some-image-model
+  #   key_env: MY_IMAGES_KEY
