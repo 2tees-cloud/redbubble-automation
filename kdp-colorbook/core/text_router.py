@@ -1,8 +1,12 @@
 """Текстовый роутер. Все провайдеры в конфиге — OpenAI-совместимые (/chat/completions),
 включая Gemini (через его OpenAI-эндпоинт), Groq, OpenRouter, Z.AI, Mistral, Cerebras, xAI."""
+import base64
+import io
 import json
 import os
 import re
+
+from PIL import Image
 
 from .base import BadOutput, BaseRouter
 
@@ -43,12 +47,30 @@ class TextRouter(BaseRouter):
         text, p = self._run(lambda p: self._call(p, messages, temperature, max_tokens))
         return {"text": text, "provider": p["name"], "model": p["model"]}
 
-    def chat_json(self, prompt: str, *, system: str | None = None,
+    def vision_providers(self) -> list[dict]:
+        """Провайдеры с vision_model в конфиге. Своё имя в состоянии: пауза vision не блокирует текст."""
+        return [{**p, "name": f"{p['name']}:vision", "model": p["vision_model"]}
+                for p in self.providers if p.get("vision_model")]
+
+    @staticmethod
+    def _image_part(img: Image.Image, max_side: int = 768) -> dict:
+        img = img.copy()
+        img.thumbnail((max_side, max_side))  # меньше токенов, для оценки раскраски детали не нужны
+        buf = io.BytesIO()
+        img.convert("RGB").save(buf, "PNG", optimize=True)
+        url = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+        return {"type": "image_url", "image_url": {"url": url}}
+
+    def chat_json(self, prompt: str, *, system: str | None = None, images: list[Image.Image] | None = None,
                   temperature: float = 0.5, max_tokens: int = 3000) -> dict:
-        """Как chat, но гарантирует валидный JSON: если провайдер вернул мусор — пробуем следующего."""
+        """Как chat, но гарантирует валидный JSON: если провайдер вернул мусор — пробуем следующего.
+        images — картинки для vision-моделей (идут только провайдеры с vision_model)."""
         sys_msg = (system + "\n\n" if system else "") + \
             "Отвечай ТОЛЬКО валидным JSON, без пояснений и без ```."
-        messages = [{"role": "system", "content": sys_msg}, {"role": "user", "content": prompt}]
+        content = prompt
+        if images:
+            content = [{"type": "text", "text": prompt}, *(self._image_part(i) for i in images)]
+        messages = [{"role": "system", "content": sys_msg}, {"role": "user", "content": content}]
 
         def call(p):
             raw = self._call(p, messages, temperature, max_tokens, json_mode=True)
@@ -62,7 +84,7 @@ class TextRouter(BaseRouter):
             except json.JSONDecodeError as e:
                 raise BadOutput(f"невалидный JSON: {e}") from e
 
-        data, p = self._run(call)
+        data, p = self._run(call, self.vision_providers() if images else None)
         return {"data": data, "provider": p["name"], "model": p["model"]}
 
     def list_models(self) -> dict[str, list[str] | str]:

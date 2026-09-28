@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from core import AllProvidersFailed, load_routers, postprocess  # noqa: E402
+from core import AllProvidersFailed, load_routers, postprocess, quality  # noqa: E402
 
 PAGE_PROMPT = ("children's coloring book page, {subject}, thick clean black outlines, "
                "pure white background, no shading, no gray, no color, simple shapes, "
@@ -62,6 +62,10 @@ def main() -> None:
         clean = postprocess.process(r["image"])
         path.with_suffix(".clean.svg").write_text(postprocess.to_svg(clean), encoding="utf-8")
         print(f"очищенный вектор: {path.with_suffix('.clean.svg')}  ({len(clean.subpaths)} контуров)")
+        v = quality.evaluate(r["image"], postprocess.binarize(r["image"]),
+                             subject="a happy dinosaur holding a balloon", text_router=text)
+        print(f"фильтр брака: {'ПРИНЯТА' if v.ok else 'ОТБРАКОВАНА'} {v.reasons or ''}")
+        print(json.dumps({k: m for k, m in v.metrics.items() if k != "phash"}, ensure_ascii=False))
     except AllProvidersFailed as e:
         print(e)
 

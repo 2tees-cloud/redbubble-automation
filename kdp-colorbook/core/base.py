@@ -66,11 +66,12 @@ class BaseRouter:
     def _required_env(p: dict) -> list[str]:
         return [v for k, v in p.items() if k.endswith("_env") and not p.get("key_optional")]
 
-    def _run(self, call: Callable[[dict], Any]) -> tuple[Any, dict]:
-        if not self.providers:
-            raise AllProvidersFailed(f"[{self.kind}] нет ни одного провайдера с ключом — заполните .env")
+    def _run(self, call: Callable[[dict], Any], providers: list[dict] | None = None) -> tuple[Any, dict]:
+        providers = self.providers if providers is None else providers
+        if not providers:
+            raise AllProvidersFailed(f"[{self.kind}] нет ни одного подходящего провайдера с ключом — заполните .env")
         errors = []
-        for p in self.providers:
+        for p in providers:
             name = p["name"]
             left = self.state.cooldown_left(name)
             if left > 0:

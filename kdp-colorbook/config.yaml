@@ -3,6 +3,7 @@
 # Названия моделей у провайдеров меняются: проверить актуальные — python scripts/check_router.py --models
 # json_mode: true  — для chat_json отправлять response_format=json_object (провайдер должен поддерживать)
 # extra_body: {...} — добавить поля в тело запроса (выключить thinking и т.п.)
+# vision_model: ...  — модель, которая видит картинки (для проверки страниц); нет поля — провайдер не проверяет
 
 log_level: INFO
 timeout: 120
@@ -12,6 +13,7 @@ text_providers:
   - name: gemini
     base_url: https://generativelanguage.googleapis.com/v1beta/openai
     model: gemini-2.5-flash
+    vision_model: gemini-2.5-flash
     key_env: GEMINI_API_KEY
     json_mode: true
     # 2.5-flash «думает», и токены размышлений съедают max_tokens → пустой ответ. Выключаем.
@@ -19,6 +21,7 @@ text_providers:
   - name: groq
     base_url: https://api.groq.com/openai/v1
     model: llama-3.3-70b-versatile
+    vision_model: meta-llama/llama-4-scout-17b-16e-instruct
     key_env: GROQ_API_KEY
     json_mode: true
   - name: cerebras
@@ -35,6 +38,7 @@ text_providers:
   - name: mistral
     base_url: https://api.mistral.ai/v1
     model: mistral-small-latest
+    vision_model: mistral-small-latest
     key_env: MISTRAL_API_KEY
     json_mode: true
   - name: openrouter
@@ -80,3 +84,19 @@ book:
   trim: [8.5, 11]     # формат в дюймах
   margin: 0.5         # внешние поля, дюймы
   blank_backs: true   # картинки только на правых страницах
+
+# Фильтр брака (core/quality.py). Для взрослых раскрасок поднять max_regions, max_ink, max_tiny.
+quality:
+  min_ink: 0.02           # доля линий: меньше — пустая страница
+  max_ink: 0.30           #             больше — каша или тёмный фон
+  max_solid: 0.04         # сплошная чёрная заливка (её не раскрасить)
+  min_regions: 6          # областей для раскрашивания
+  max_regions: 400
+  max_tiny: 0.15          # доля белого в ячейках мельче карандаша
+  max_edge_ink: 0.15      # линии на самом краю картинки
+  dup_distance: 10        # похожесть на уже принятую страницу (0..64, меньше — строже)
+  min_vision_score: 7     # оценка vision-модели 1..10
+  vision_required: false  # true: без работающего vision страницы не принимаются
+
+# Шаблон промпта страницы ({subject}, {age}). Пусто — встроенный из core/pipeline.py
+page_prompt:
