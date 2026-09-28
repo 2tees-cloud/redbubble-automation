@@ -14,6 +14,31 @@ log = logging.getLogger("book")
 
 MIN_PAGES = 24  # минимум KDP для paperback
 
+# Популярные для раскрасок форматы KDP paperback (дюймы). Имя = как в форме KDP.
+TRIMS = {
+    "8.5x11": (8.5, 11.0),    # стандарт раскрасок, дети и взрослые
+    "8.5x8.5": (8.5, 8.5),    # квадрат — малыши, мандалы
+    "8.25x8.25": (8.25, 8.25),
+    "8x10": (8.0, 10.0),
+    "8.25x11": (8.25, 11.0),
+    "6x9": (6.0, 9.0),        # карманный формат (в дорогу)
+}
+
+
+def parse_trim(value) -> tuple[float, float]:
+    """'8.5x11' | [8.5, 11] → (8.5, 11.0); только форматы из TRIMS."""
+    if isinstance(value, str):
+        key = value.lower().replace(" ", "").replace("×", "x")
+    else:
+        key = f"{float(value[0]):g}x{float(value[1]):g}"
+    if key not in TRIMS:
+        raise ValueError(f"формат {value!r} не поддерживается, есть: {', '.join(TRIMS)}")
+    return TRIMS[key]
+
+
+def trim_name(trim: tuple[float, float]) -> str:
+    return f"{trim[0]:g}x{trim[1]:g}"
+
 # Внутреннее поле (у корешка) по числу страниц — таблица KDP.
 _GUTTER = [(150, 0.375), (300, 0.5), (500, 0.625), (700, 0.75), (828, 0.875)]
 

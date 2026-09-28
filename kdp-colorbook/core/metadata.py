@@ -8,6 +8,8 @@
 import html
 import re
 
+from . import profiles, safety
+
 LIMITS = {"title_subtitle": 200, "keyword": 50, "keywords": 7, "description": 4000}
 
 # Запрещено/не рекомендуется KDP в названии и ключевых словах (обещания продаж, программы Amazon)
@@ -21,16 +23,17 @@ AI_NOTICE = ("При публикации в KDP ответьте «Да» на 
              "(иллюстрации созданы ИИ). Сокрытие — нарушение правил KDP.")
 
 PROMPT = """You write Amazon KDP listing metadata for a paperback coloring book.
-Theme: "{theme}". Audience: kids age {age}. Interior: {images} single-sided illustrations, {trim}.
+Theme: "{theme}". Audience: {audience}. Interior: {images} single-sided illustrations, {trim}.
 Example pages: {examples}.
+Style notes: {hint}.
 Return JSON:
 {{"title": "catchy, contains the main search phrase, max 60 chars",
-"subtitle": "e.g. 'Coloring Book for Kids Ages {age}: ...', max 120 chars",
-"description": "150-250 words for parents; simple HTML allowed: <b>, <br>, <ul><li>; mention page count, single-sided pages, thick lines, size",
+"subtitle": "max 120 chars, see style notes",
+"description": "150-250 words, simple HTML allowed: <b>, <br>, <ul><li>; mention page count, single-sided pages, size",
 "keywords": ["7 search phrases buyers type on Amazon, 2-5 words each, max 50 chars, do not repeat title words"],
 "back_text": "1-2 cheerful sentences for the back cover, max 200 chars, no HTML",
 "categories": ["3 suggested Amazon category paths"]}}
-Never use: bestseller, free, sale, Amazon, Kindle, #1."""
+Never use: bestseller, free, sale, Amazon, Kindle, #1, brand or character names, real people."""
 
 
 def _has_banned(text: str) -> list[str]:
@@ -57,15 +60,21 @@ def sanitize(d: dict) -> tuple[dict, list[str]]:
     """Приводит черновик к правилам KDP. Возвращает (метаданные, предупреждения)."""
     warn = []
     out = {k: (str(d.get(k) or "").strip()) for k in ("title", "subtitle", "description", "back_text")}
+    out["unsafe"] = []
     for k in ("title", "subtitle"):
         if bad := _has_banned(out[k]):
             warn.append(f"{k} содержит запрещённое KDP: {', '.join(bad)} — исправьте вручную")
+        if bad := safety.blocked_terms(out[k]):
+            out["unsafe"].append(f"{k}: {', '.join(bad)}")
+            warn.append(f"{k} содержит бренд/опасное слово: {', '.join(bad)} — публиковать нельзя")
     if len(out["title"]) + len(out["subtitle"]) > LIMITS["title_subtitle"]:
         warn.append(f"название + подзаголовок длиннее {LIMITS['title_subtitle']} символов")
 
     kws, seen = [], set()
     for k in d.get("keywords") or []:
         k = _strip_banned(re.sub(r"[\"“”]", "", str(k)))
+        if safety.blocked_terms(k):
+            continue  # фраза с брендом — выкидываем целиком
         if len(k) > LIMITS["keyword"]:
             k = k[:LIMITS["keyword"]].rsplit(" ", 1)[0]
         if k and k.lower() not in seen:
@@ -78,6 +87,9 @@ def sanitize(d: dict) -> tuple[dict, list[str]]:
     desc = _clean_html(out["description"])
     if bad := _has_banned(re.sub(r"<[^>]+>", " ", desc)):
         warn.append(f"описание содержит {', '.join(bad)} — проверьте формулировки")
+    if bad := safety.blocked_terms(re.sub(r"<[^>]+>", " ", desc)):
+        out["unsafe"].append(f"description: {', '.join(bad)}")
+        warn.append(f"описание содержит бренд/опасное слово: {', '.join(bad)}")
     if len(desc) > LIMITS["description"]:
         desc = desc[:LIMITS["description"]].rsplit(" ", 1)[0]
         warn.append("описание обрезано до 4000 символов")
@@ -88,9 +100,12 @@ def sanitize(d: dict) -> tuple[dict, list[str]]:
 
 
 def generate(text_router, *, theme: str, age: str, images: int, trim: str = "8.5 x 11 in",
-             examples: list[str] | None = None) -> tuple[dict, list[str]]:
+             examples: list[str] | None = None, audience: str = "kids") -> tuple[dict, list[str]]:
     ex = "; ".join((examples or [])[:6]) or theme
-    res = text_router.chat_json(PROMPT.format(theme=theme, age=age, images=images, trim=trim, examples=ex),
+    prof = profiles.get(audience)
+    res = text_router.chat_json(PROMPT.format(theme=theme, audience=prof["audience"].format(age=age),
+                                              hint=prof["listing_hint"].format(age=age), images=images,
+                                              trim=trim, examples=ex),
                                 temperature=0.7, max_tokens=2500)
     data = res["data"] if isinstance(res["data"], dict) else {}
     meta, warn = sanitize(data)

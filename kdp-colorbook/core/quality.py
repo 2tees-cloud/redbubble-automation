@@ -23,8 +23,9 @@ class Limits:
     max_ink: float = 0.30         # больше — каша из линий или тёмный фон
     max_solid: float = 0.04       # доля сплошной заливки чёрным (её не раскрасить)
     min_regions: int = 6          # областей для раскрашивания меньше — скучно
-    max_regions: int = 400        # больше — слишком много областей (для детей; для взрослых поднять)
+    max_regions: int = 150        # больше — слишком детально для детей (у взрослого профиля свой порог)
     max_tiny: float = 0.15        # доля белого в ячейках мельче карандаша — слишком мелкие детали
+    min_region_frac: float = 0.0005  # «ячейка мельче карандаша»: площадь меньше этой доли страницы
     max_edge_ink: float = 0.15    # доля линий на самом краю — признак фона/обрезки
     dup_distance: int = 10        # хеши ближе (из 64 бит) — дубликат
     min_vision_score: int = 7     # оценка vision-модели 1..10
@@ -44,17 +45,17 @@ class Verdict:
 
 
 # --- 1. пиксели -----------------------------------------------------------
-def pixel_metrics(ink: np.ndarray) -> dict:
+def pixel_metrics(ink: np.ndarray, min_region_frac: float = 0.0005) -> dict:
     h, w = ink.shape
     area = ink.size
     u8 = ink.astype(np.uint8)
     # сплошная заливка: то, что переживает «открытие» кругом ~3% ширины (линии тоньше — исчезают)
     k = max(3, int(0.03 * min(h, w)) | 1)
     solid = cv2.morphologyEx(u8, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
-    # белые области, в которые реально можно попасть карандашом (≥0.05% страницы)
+    # белые области, в которые реально можно попасть карандашом (≥ min_region_frac страницы)
     n, _, stats, _ = cv2.connectedComponentsWithStats((~ink).astype(np.uint8), connectivity=4)
     sizes = stats[1:, cv2.CC_STAT_AREA]
-    big = sizes >= area * 0.0005
+    big = sizes >= area * min_region_frac
     regions = int(big.sum())
     tiny = float(sizes[~big].sum() / max(sizes.sum(), 1))  # доля белого в «неподъёмных» ячейках
     b = max(2, min(h, w) // 200)
@@ -108,7 +109,7 @@ class Deduper:
 
 
 # --- 3. vision ------------------------------------------------------------
-VISION_PROMPT = """You are a strict quality inspector for a printed children's coloring book.
+VISION_PROMPT = """You are a strict quality inspector for a printed coloring book for {audience}.
 The page should show: "{subject}".
 Answer JSON: {{"score": 1-10 overall suitability for printing as a coloring page,
 "is_line_art": true if only black outlines on white (no gray, shading or filled areas),
@@ -122,10 +123,11 @@ _HARD = {"is_line_art": False, "has_text": True, "anatomy_errors": True,
          "cut_off": True, "matches_subject": False}
 
 
-def vision_review(img: Image.Image, subject: str, text_router, lim: Limits) -> tuple[list[str], dict]:
+def vision_review(img: Image.Image, subject: str, text_router, lim: Limits,
+                  audience: str = "kids") -> tuple[list[str], dict]:
     """Возвращает (причины отказа, сырой ответ модели)."""
     try:
-        res = text_router.chat_json(VISION_PROMPT.format(subject=subject), images=[img],
+        res = text_router.chat_json(VISION_PROMPT.format(subject=subject, audience=audience), images=[img],
                                     temperature=0.1, max_tokens=500)
     except AllProvidersFailed as e:
         log.warning("vision недоступен: %s", str(e).splitlines()[0])
@@ -145,10 +147,10 @@ def vision_review(img: Image.Image, subject: str, text_router, lim: Limits) -> t
 
 # --- всё вместе -----------------------------------------------------------
 def evaluate(img: Image.Image, ink: np.ndarray, *, subject: str = "", lim: Limits | None = None,
-             deduper: Deduper | None = None, text_router=None) -> Verdict:
+             deduper: Deduper | None = None, text_router=None, audience: str = "kids") -> Verdict:
     """img — исходная картинка (для vision), ink — маска после postprocess.binarize."""
     lim = lim or Limits()
-    m = pixel_metrics(ink)
+    m = pixel_metrics(ink, lim.min_region_frac)
     reasons = check_pixels(m, lim)
     if reasons:
         return Verdict(False, reasons, m)
@@ -156,7 +158,7 @@ def evaluate(img: Image.Image, ink: np.ndarray, *, subject: str = "", lim: Limit
     if deduper and (twin := deduper.find(m["phash"])):
         return Verdict(False, [f"дубликат {twin}"], m)
     if text_router is not None:
-        reasons, v = vision_review(img, subject, text_router, lim)
+        reasons, v = vision_review(img, subject, text_router, lim, audience)
         m["vision"] = v
         if reasons:
             return Verdict(False, reasons, m)

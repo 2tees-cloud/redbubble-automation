@@ -24,6 +24,7 @@ def main() -> None:
     ap.add_argument("src", type=Path, help="папка с картинками (порядок = сортировка по имени)")
     ap.add_argument("-o", "--out", type=Path, default=ROOT / "out" / "interior.pdf")
     ap.add_argument("--svg", action="store_true", help="сохранить очищенные SVG рядом с картинками")
+    ap.add_argument("--trim", help=f"формат: {', '.join(book.TRIMS)} (по умолчанию из config)")
     args = ap.parse_args()
 
     cfg = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
@@ -43,7 +44,7 @@ def main() -> None:
         print(f"{f.name}: {len(page.subpaths)} контуров, {time.time() - t:.1f} с")
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    res = book.build_interior(pages, args.out, trim=tuple(book_cfg.get("trim", (8.5, 11))),
+    res = book.build_interior(pages, args.out, trim=book.parse_trim(args.trim or book_cfg.get("trim", "8.5x11")),
                               margin=book_cfg.get("margin", 0.5),
                               blank_backs=book_cfg.get("blank_backs", True))
     print(f"\nГотово: {res['path']}  страниц {res['page_count']}, поле у корешка {res['gutter']}\"")

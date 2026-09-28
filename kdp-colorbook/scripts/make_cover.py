@@ -16,7 +16,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from core import AllProvidersFailed, book, cover, load_routers, metadata, postprocess  # noqa: E402
+from core import AllProvidersFailed, book, cover, load_routers, metadata, pipeline, postprocess, safety  # noqa: E402
 
 
 def main() -> None:
@@ -32,12 +32,15 @@ def main() -> None:
     args = ap.parse_args()
 
     cfg = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
-    book_cfg, pp_cfg = cfg.get("book", {}), cfg.get("postprocess", {})
+    book_cfg = cfg.get("book", {})
     d = json.loads((args.book_dir / "manifest.json").read_text(encoding="utf-8"))
     acc = d.get("accepted", [])
     if not acc:
         sys.exit("В книге нет принятых страниц — сначала make_pages.py")
-    trim = tuple(book_cfg.get("trim", (8.5, 11)))
+    trim = book.parse_trim(d.get("trim") or book_cfg.get("trim", "8.5x11"))
+    audience = d.get("audience", "kids")
+    _, pp_cfg, _ = pipeline.resolve(cfg, audience)
+    safety.configure(cfg.get("safety"))
     pages = book.page_count(len(acc), book_cfg.get("blank_backs", True))
 
     # --- метаданные
@@ -50,7 +53,7 @@ def main() -> None:
             text, _ = load_routers()
             meta, warn = metadata.generate(text, theme=d["theme"], age=d.get("age", "4-8"), images=len(acc),
                                            trim=f"{trim[0]} x {trim[1]} in",
-                                           examples=[a["subject"] for a in acc])
+                                           examples=[a["subject"] for a in acc], audience=audience)
         except AllProvidersFailed as e:
             if not args.title:
                 sys.exit(f"{e}\n\nНет текстового провайдера — задайте хотя бы --title (и --subtitle).")
