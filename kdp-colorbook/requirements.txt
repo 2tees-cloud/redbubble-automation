@@ -5,3 +5,4 @@ python-dotenv>=1.0
 numpy>=1.24
 opencv-python-headless>=4.8
 potracer>=0.0.4
+playwright>=1.40

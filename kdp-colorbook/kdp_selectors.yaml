@@ -1,0 +1,68 @@
+# Селекторы страниц KDP для робота загрузки (core/kdp.py).
+# Для каждого поля — список вариантов, робот берёт первый найденный на странице.
+# Синтаксис Playwright: "#id", "css=...", "text=...", "role=button[name='...']", "label=..." (по подписи поля).
+# KDP меняет вёрстку: если шаг падает, в папке книги kdp_debug/ будут скриншот и HTML — по ним
+# найдите новый id/текст и допишите вариант ПЕРВЫМ в список. Код трогать не нужно.
+
+login:
+  signed_in: ["#bookshelf-title", "text=Your Books", "text=Bookshelf", "#create-new-title"]
+  email: ["#ap_email", "input[name=email]"]
+  continue: ["#continue", "input#continue"]
+  password: ["#ap_password", "input[name=password]"]
+  submit: ["#signInSubmit", "input#signInSubmit"]
+  challenge: ["#auth-captcha-image", "input[name=otpCode]", "#auth-mfa-otpcode", "text=Two-Step Verification",
+              "text=Enter the characters you see"]
+
+details:
+  title: ["#data-title", "label=Book Title"]
+  subtitle: ["#data-subtitle", "label=Subtitle"]
+  author_first: ["#data-primary-author-first-name", "label=First name"]
+  author_last: ["#data-primary-author-last-name", "label=Last name"]
+  description_frame: ["iframe.cke_wysiwyg_frame", "#cke_editor1 iframe"]
+  description_textarea: ["#data-description", "textarea[name='data[description]']"]
+  rights_own: ["#non-public-domain", "label=I own the copyright and I hold the necessary publishing rights."]
+  adult_content_no: ["#data-is-adult-content-false", "css=input[name='data[is_adult_content]'][value='false']"]
+  keyword: ["#data-keywords-{i}", "css=input[name='data[keywords][{i}]']"]
+  categories_button: ["#categories-modal-button", "role=button[name='Choose categories']",
+                      "text=Choose categories", "text=Edit categories"]
+  categories_modal: ["#react-aui-modal-content-1", ".a-popover-modal:visible", "[role=dialog]:visible"]
+  categories_save: ["role=button[name='Save categories']", "text=Save categories"]
+  save_continue: ["#save-and-continue-announce", "role=button[name='Save and Continue']", "text=Save and Continue"]
+
+content:
+  isbn_free: ["#free-print-isbn-btn-announce", "role=button[name='Assign me a free KDP ISBN']",
+              "text=Get a free KDP ISBN", "text=Assign me a free KDP ISBN"]
+  isbn_confirm: ["#free-print-isbn-accept-button-announce", "role=button[name='Assign ISBN']", "text=Assign ISBN"]
+  isbn_assigned: ["#free-print-isbn-assigned", "text=Your ISBN is"]
+  ink_bw_white: ["#a-autoid-0-announce", "text=Black & white interior with white paper"]
+  ink_bw_cream: ["text=Black & white interior with cream paper"]
+  trim_open: ["#trim-size-btn-announce", "role=button[name='Select a different size']", "text=Select a different size"]
+  trim_option: ["#trim-size-{key}-announce", "text={label}"]
+  no_bleed: ["#a-autoid-2-announce", "text=No Bleed"]
+  finish_matte: ["text=Matte"]
+  finish_glossy: ["text=Glossy"]
+  manuscript_input: ["#data-print-book-publisher-interior-file-upload-AjaxInput",
+                     "css=#data-print-book-publisher-interior-file-upload input[type=file]"]
+  manuscript_done: ["#data-print-book-publisher-interior-file-upload-success", "text=Manuscript uploaded successfully"]
+  cover_own: ["#data-print-book-publisher-cover-choice-upload", "text=Upload a cover you already have"]
+  cover_input: ["#data-print-book-publisher-cover-file-upload-AjaxInput",
+                "css=#data-print-book-publisher-cover-file-upload input[type=file]"]
+  cover_done: ["#data-print-book-publisher-cover-file-upload-success", "text=Cover uploaded successfully"]
+  ai_yes: ["#generative-ai-questionnaire-yes", "css=input[name='generative-ai-questionnaire'][value='yes']",
+           "label=Yes"]
+  ai_text_select: ["#generative-ai-questionnaire-text", "label=Text"]
+  ai_images_select: ["#generative-ai-questionnaire-images", "label=Images"]
+  ai_translation_select: ["#generative-ai-questionnaire-translations", "label=Translations"]
+  ai_images_tool: ["#generative-ai-questionnaire-images-tool", "css=input[name='generative-ai-images-tool']"]
+  preview_launch: ["#print-preview-noconfirm-announce", "role=button[name='Launch Previewer']", "text=Launch Previewer"]
+  preview_approve: ["#printpreview_approve_button_enabled", "role=button[name='Approve']", "text=Approve"]
+  save_continue: ["#save-and-continue-announce", "role=button[name='Save and Continue']", "text=Save and Continue"]
+
+pricing:
+  all_territories: ["#data-pricing-print-worldwide-rights", "text=All territories (worldwide rights)"]
+  price_us: ["#data-pricing-print-us-price-input input", "css=input[name='data[print_book][amazon_channel][us][price_vat_exclusive]']"]
+  publish: ["#save-and-publish-announce", "role=button[name='Publish Your Paperback Book']",
+            "text=Publish Your Paperback Book"]
+  save_draft: ["#save-announce", "role=button[name='Save as Draft']", "text=Save as Draft"]
+  published: ["text=is being published", "text=Congratulations", "#publish-confirm-popover"]
+  saved: ["text=Draft saved", "text=saved as a draft", "text=Your changes have been saved"]

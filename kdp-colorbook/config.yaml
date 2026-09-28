@@ -134,3 +134,31 @@ research:
   min_pages: 30           # иллюстраций в книге
   max_pages: 50
   season_lead: [30, 75]   # за сколько дней до праздника делать сезонную книгу
+
+# Автопилот: одна книга в день (scripts/daily.py, расписание — scripts/schedule.py)
+autopilot:
+  author: ""              # ОБЯЗАТЕЛЬНО: имя автора/псевдоним для KDP, например "Anna Green"
+  vision: true            # проверка страниц vision-моделью
+  min_images: 20          # меньше качественных страниц — книгу не делаем
+  max_upload_attempts: 3  # после стольких сбоев загрузки книга помечается failed
+
+# Робот загрузки в KDP (core/kdp.py, селекторы — kdp_selectors.yaml)
+# ВНИМАНИЕ: условия Amazon запрещают роботов; за автоматизацию KDP может закрыть аккаунт.
+kdp:
+  base_url: https://kdp.amazon.com/en_US
+  channel: chrome         # установленный Google Chrome; пусто — Chromium из playwright
+  headless: false         # окно браузера видно (Amazon реже просит капчу)
+  profile_dir: data/kdp_profile
+  publish: true           # false — только сохранять черновики
+  first_run_draft: true   # первую книгу — черновиком: проверить глазами, дальше публикует сам
+  price_usd: 7.99         # не ниже минимума KDP (+$1 запаса) — поднимется автоматически
+  paper: white            # white / cream
+  cover_finish: matte     # matte / glossy
+  ai_tool: "FLUX.1 [schnell]"
+  timeout_s: 30
+  processing_timeout_s: 900   # обработка PDF и превьюер KDP
+  categories:             # путь в окне «Choose categories»: уровни списков, последний — чекбокс
+    kids:
+      - ["Children's Books", "Activities, Crafts & Games", "Coloring Books"]
+    adults:
+      - ["Crafts, Hobbies & Home", "Crafts & Hobbies", "Coloring Books for Grown-Ups"]
