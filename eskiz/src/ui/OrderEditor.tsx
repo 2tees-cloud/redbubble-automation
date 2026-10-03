@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import {
   checkOrder, colorInfo, facadeInfo, kindInfo, kitchenFreeTop, sizeDefaults, sizeLimits, statusInfo, tierInfo,
   type Kind, type Order, type Status,
@@ -6,6 +6,8 @@ import {
 import { calcQuote, type PriceList } from '../engine/pricing';
 import { money } from '../storage';
 import FurnitureView from './FurnitureView';
+
+const Viewer3D = lazy(() => import('./Viewer3D'));
 import { Choice, NumberField, TextField, Toggle } from './fields';
 
 const coupeFills = {
@@ -23,7 +25,6 @@ export default function OrderEditor({
   onProposal: () => void;
   onWorkshop: () => void;
 }) {
-  const [doors, setDoors] = useState(true);
   const issues = checkOrder(order);
   const quote = useMemo(() => (issues.length ? null : calcQuote(order, prices)), [order, prices, issues.length]);
   const set = (patch: Partial<Order>) => onChange({ ...order, ...patch });
@@ -34,6 +35,7 @@ export default function OrderEditor({
 
   const lim = order.kind !== 'kitchen' ? sizeLimits[order.kind] : null;
   const canPrice = quote && quote.ok;
+  const worktop = order.kind === 'kitchen' && order.kitchen.worktop;
 
   return (
     <div className="editor">
@@ -97,7 +99,7 @@ export default function OrderEditor({
           </div>
           <TextField label="Адрес" value={order.client.address} onChange={(address) => set({ client: { ...order.client, address } })} />
           <div className="field">
-            <label htmlFor="note">Заметки</label>
+            <label htmlFor="note">Заметки (видите только вы)</label>
             <textarea id="note" rows={3} value={order.note} placeholder="Например: ручки чёрные, ниша под стиралку" onChange={(e) => set({ note: e.target.value })} />
           </div>
           <div className="field">
@@ -112,8 +114,9 @@ export default function OrderEditor({
       <aside className="result">
         {quote ? (
           <>
-            <FurnitureView project={quote.project} color={order.color} doors={doors} />
-            <Toggle label="Показать двери" checked={doors} onChange={setDoors} />
+            <Suspense fallback={<FurnitureView project={quote.project} color={order.color} doors worktop={worktop} />}>
+              <Viewer3D project={quote.project} color={order.color} facade={order.facade} worktop={worktop} />
+            </Suspense>
             {canPrice ? (
               <div className="price">
                 <span>Цена для клиента</span>

@@ -172,7 +172,7 @@ export function calcQuote(order: Order, prices: PriceList = defaultPrices): Quot
   const cost = materials + labor + delivery;
 
   const summary: string[] = [];
-  summary.push(`Корпус из ЛДСП 18 мм${ldspFronts ? '' : ', фасады — ' + { mdf_film: 'МДФ в плёнке', mdf_paint: 'МДФ крашеный', acrylic: 'акрил' }[order.facade as Exclude<Facade, 'ldsp'>]}`);
+  summary.push(`Корпус из ЛДСП 18 мм${ldspFronts || !doors.length ? '' : ', фасады — ' + { mdf_film: 'МДФ в плёнке', mdf_paint: 'МДФ крашеный', acrylic: 'акрил' }[order.facade as Exclude<Facade, 'ldsp'>]}`);
   if (doors.length) summary.push(`${doors.length} ${plural(doors.length, 'дверь', 'двери', 'дверей')} на ${hinges} ${plural(hinges, 'петле', 'петлях', 'петлях')}`);
   if (coupeDoors) summary.push(`${coupeDoors} ${plural(coupeDoors, 'дверь', 'двери', 'дверей')} купе`);
   if (shelves) summary.push(`${shelves} ${plural(shelves, 'полка', 'полки', 'полок')}`);

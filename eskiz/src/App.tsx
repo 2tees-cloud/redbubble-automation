@@ -5,17 +5,20 @@ import {
   loadCompany, loadOrders, loadPrices, money, saveCompany, saveOrders, savePrices,
 } from './storage';
 import OrderEditor from './ui/OrderEditor';
+import ClientView from './ui/ClientView';
 import Proposal from './ui/Proposal';
 import Settings from './ui/Settings';
 import Workshop from './ui/Workshop';
 
-// Адреса экранов: #/, #/o/<id>, #/o/<id>/client, #/o/<id>/shop, #/settings.
+// Адреса экранов: #/, #/o/<id>, #/o/<id>/client, #/o/<id>/shop, #/settings,
+// #/v/<код> — страница для клиента по ссылке.
 // Кнопка «Назад» на телефоне работает как ожидается.
-type Route = { page: 'list' } | { page: 'settings' } | { page: 'order' | 'client' | 'shop'; id: string };
+type Route = { page: 'list' } | { page: 'settings' } | { page: 'view'; code: string } | { page: 'order' | 'client' | 'shop'; id: string };
 
 function parse(hash: string): Route {
   const [, a, id, b] = hash.replace(/^#/, '').split('/');
   if (a === 'settings') return { page: 'settings' };
+  if (a === 'v' && id) return { page: 'view', code: id };
   if (a === 'o' && id) return { page: b === 'client' ? 'client' : b === 'shop' ? 'shop' : 'order', id };
   return { page: 'list' };
 }
@@ -65,6 +68,15 @@ export default function App() {
   let title = 'Мои расчёты';
   let back: string | null = null;
   let body: React.ReactNode;
+
+  if (route.page === 'view') {
+    // Клиент видит только своё предложение: без списка, настроек и кнопки «Назад».
+    return (
+      <div className="app">
+        <main><ClientView code={route.code} /></main>
+      </div>
+    );
+  }
 
   if (route.page === 'settings') {
     title = 'Настройки и цены';

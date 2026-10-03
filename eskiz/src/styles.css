@@ -152,6 +152,26 @@ p.issues { padding-left: 14px; }
   .sticky-price { display: none; }
 }
 
+/* 3D */
+.viewer3d { position: relative; background: #efede7; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.viewer3d-canvas { width: 100%; aspect-ratio: 4 / 3; max-height: 70vh; touch-action: none; }
+.viewer3d-canvas canvas { display: block; width: 100% !important; height: 100% !important; }
+.viewer3d-bar { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; justify-content: space-between; gap: 8px; pointer-events: none; }
+.viewer3d-bar button { pointer-events: auto; min-height: 40px; background: rgba(255,255,255,.92); backdrop-filter: blur(4px); }
+.viewer3d-hint {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  padding: 4px 12px; border-radius: 99px; background: rgba(31,42,39,.7); color: #fff; font-size: 13px;
+  white-space: nowrap; pointer-events: none;
+}
+.print-only { display: none; }
+
+/* Страница клиента */
+.client-view { max-width: 820px; margin: 0 auto; display: grid; gap: 16px; }
+.client-view .from { margin: 0; color: var(--primary); font-weight: 700; }
+.client-view h2 { font-size: 24px; }
+.contact { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; }
+.button.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+
 /* Цех */
 .workshop, .settings { display: grid; gap: 16px; max-width: 900px; margin: 0 auto; }
 .money-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
@@ -215,6 +235,7 @@ p.issues { padding-left: 14px; }
   @page { size: A4; margin: 14mm; }
   body { background: #fff; }
   .no-print, .toolbar, .sticky-price { display: none !important; }
+  .print-only { display: block; }
   main { padding: 0; max-width: none; }
   .proposal { border: 0; padding: 0; }
   .total { -webkit-print-color-adjust: exact; print-color-adjust: exact; }

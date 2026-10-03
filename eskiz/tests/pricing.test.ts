@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { newOrder, buildProject, checkOrder, type Order } from '../src/engine/order';
 import { calcQuote, hingesFor, defaultPrices, cuttingParts, facadeParts } from '../src/engine/pricing';
 import { viyarGroups } from '../src/engine/viyar-export';
+import { buildScene } from '../src/engine/geometry';
 
 const order = (patch: Partial<Order>): Order => ({ ...newOrder(), ...patch });
 
@@ -54,6 +55,25 @@ describe('простой заказ → корпуса', () => {
   });
 });
 
+describe('3D-сцена', () => {
+  it('двери шкафа на 3 двери не открываются навстречу друг другу', () => {
+    const sc = buildScene(buildProject(order({ kind: 'wardrobe' })));
+    const hinges = sc.boxes.filter((b) => b.hinge).map((b) => b.hinge);
+    expect(hinges).toEqual(['left', 'right', 'right']);
+    expect(sc.boxes.filter((b) => b.role === 'handle')).toHaveLength(3);
+  });
+  it('кухня: столешница только над нижними шкафами, цоколь под ними', () => {
+    const o = order({ kind: 'kitchen' });
+    const sc = buildScene(buildProject(o), { worktop: true });
+    expect(sc.boxes.some((b) => b.role === 'worktop')).toBe(true);
+    expect(sc.boxes.filter((b) => b.role === 'plinth').every((b) => b.y === 0)).toBe(true);
+  });
+  it('у купе в описании нет фасадов', () => {
+    const q = calcQuote(order({ kind: 'coupe', facade: 'acrylic' }));
+    expect(q.summary[0]).toBe('Корпус из ЛДСП 18 мм');
+  });
+});
+
 describe('цена', () => {
   it('петли по высоте двери', () => {
     expect([700, 1200, 1800, 2400].map(hingesFor)).toEqual([2, 3, 4, 5]);
@@ -84,5 +104,22 @@ describe('цена', () => {
     expect(facadeParts(o, q.parts)).toHaveLength(3);
     // В каждом файле для ВіЯр — один материал: ЛДСП корпуса и ХДФ отдельно.
     expect(viyarGroups(cuttingParts(o, q.parts)).map((g) => g.thickness).sort()).toEqual([18, 3]);
+  });
+});
+
+describe('ссылка для клиента', () => {
+  it('кодируется и читается обратно без прайса и заметок', async () => {
+    const { encodeShare, decodeShare } = await import('../src/share');
+    const { defaultCompany } = await import('../src/storage');
+    const o = order({ kind: 'kitchen', note: 'клиент торгуется', client: { name: 'Олена', phone: '+380', address: '' } });
+    const q = calcQuote(o);
+    const code = await encodeShare(o, q, defaultCompany);
+    expect(code.length).toBeLessThan(1500);
+    const back = await decodeShare(code);
+    expect(back?.total).toBe(q.total);
+    expect(back?.order.client.name).toBe('Олена');
+    expect(JSON.stringify(back)).not.toContain('торгуется');
+    expect(JSON.stringify(back)).not.toContain('ldspSheet');
+    expect(await decodeShare('zBROKEN')).toBeNull();
   });
 });
