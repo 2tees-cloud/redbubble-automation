@@ -1,7 +1,8 @@
 // Расчёт цены по деталировке и прайсу мастера.
 // Вся фурнитура подбирается автоматически по правилам ниже.
 import { calculate, type Part, type Project } from './furniture';
-import { calculateSliding } from './sliding';
+import { boardParts, calcDoors, colorNames, fillInfo, type DoorsResult } from './doors';
+import { buildScene, nicheScene, type Scene } from './geometry';
 import { buildProject, type Facade, type Order, type Tier } from './order';
 
 export type TierPrices = Record<Tier, number>;
@@ -19,8 +20,11 @@ export interface PriceList {
   hanger: TierPrices;
   shelfSupport: TierPrices;
   fastenersPerModule: TierPrices;
-  coupeDoor: TierPrices; // профиль + ролики на одну дверь купе
+  coupeDoor: TierPrices; // на одну дверь купе: профили, ролики, крепёж, щётка, уплотнитель
+  railsPerM: number; // направляющие верх + низ, за погонный метр проёма
+  dividerPerM: number; // разделительный профиль
   mirrorM2: number;
+  glassM2: number;
   boardFillM2: number;
   worktopPerM: number;
   plinthPerM: number;
@@ -45,7 +49,10 @@ export const defaultPrices: PriceList = {
   shelfSupport: { eco: 2, standard: 4, premium: 10 },
   fastenersPerModule: { eco: 60, standard: 100, premium: 150 },
   coupeDoor: { eco: 2500, standard: 3800, premium: 6000 },
+  railsPerM: 500,
+  dividerPerM: 180,
   mirrorM2: 950,
+  glassM2: 900,
   boardFillM2: 600,
   worktopPerM: 2200,
   plinthPerM: 350,
@@ -81,7 +88,9 @@ export interface Quote {
   ok: boolean;
   problems: string[];
   warnings: string[];
-  project: Project;
+  project: Project | null; // корпус; для дверей в нишу — null
+  doors?: DoorsResult; // двери купе, если есть
+  scene: Scene; // для 3D и картинки
   parts: Part[];
   lines: Line[];
   materials: number;
@@ -100,17 +109,30 @@ const area = (p: Part) => (p.length * p.width) / 1e6;
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export function calcQuote(order: Order, prices: PriceList = defaultPrices): Quote {
-  const project = buildProject(order);
-  const { parts, errors, warnings } = calculate(project);
+  const doorsOnly = order.kind === 'doors';
+  const project = doorsOnly ? null : buildProject(order);
+  const { parts, errors, warnings } = project ? calculate(project) : { parts: [] as Part[], errors: [] as string[], warnings: [] as string[] };
   const lines: Line[] = [];
   const tier = order.hardware;
   const add = (group: Group, name: string, qty: number, unit: string, price: number) => {
     if (qty > 0) lines.push({ group, name, qty: r2(qty), unit, price, sum: Math.round(qty * price) });
   };
 
-  const doors = parts.filter((p) => role(p) === 'door');
+  // Двери купе: в нишу — по чистовому проёму, у шкафа-купе — по проёму корпуса.
+  let doors: DoorsResult | undefined;
+  if (doorsOnly) doors = calcDoors(order.size.width, order.size.height, order.doors);
+  else if (project && order.kind === 'coupe') {
+    const m = project.modules[0];
+    doors = calcDoors(m.width - 2 * project.thickness, m.height - 2 * project.thickness, order.doors, m.sliding?.railAllowance ?? 0);
+  }
+  if (doors) {
+    errors.push(...doors.errors);
+    parts.push(...boardParts(doors));
+  }
+
+  const doorParts = parts.filter((p) => role(p) === 'door');
   const ldspFronts = order.facade === 'ldsp';
-  const bodyParts = parts.filter((p) => role(p) !== 'back' && (role(p) !== 'door' || ldspFronts));
+  const bodyParts = parts.filter((p) => role(p) !== 'back' && role(p) !== 'fill' && (role(p) !== 'door' || ldspFronts));
   const backs = parts.filter((p) => role(p) === 'back');
 
   // Плита: площадь деталей с запасом на отходы, округляем вверх до целых листов.
@@ -124,36 +146,34 @@ export function calcQuote(order: Order, prices: PriceList = defaultPrices): Quot
   add('Плита и кромка', 'Кромка (материал)', edgeM, 'м', prices.edgePerM);
   add('Плита и кромка', 'Кромкование (работа)', edgeM, 'м', prices.edgingPerM);
 
-  if (order.facade !== 'ldsp' && doors.length) {
-    const facadeArea = doors.reduce((a, p) => a + area(p), 0);
+  if (order.facade !== 'ldsp' && doorParts.length) {
+    const facadeArea = doorParts.reduce((a, p) => a + area(p), 0);
     const names = { mdf_film: 'Фасады МДФ в плёнке', mdf_paint: 'Фасады МДФ крашеные', acrylic: 'Фасады акрил' } as const;
     add('Фасады', names[order.facade], facadeArea, 'м²', prices.facadeM2[order.facade]);
   }
 
   // Фурнитура — по количеству дверей, полок и корпусов.
-  const hinges = doors.reduce((a, p) => a + hingesFor(p.length), 0);
+  const modules = project?.modules ?? [];
+  const hinges = doorParts.reduce((a, p) => a + hingesFor(p.length), 0);
   const shelves = parts.filter((p) => role(p) === 'shelf').length;
-  const kitchenModules = project.modules.filter((m) => m.kitchen);
+  const kitchenModules = modules.filter((m) => m.kitchen);
   const legs = kitchenModules.filter((m) => m.kitchen!.kind !== 'wall').length * 4;
   const hangers = kitchenModules.filter((m) => m.kitchen!.kind === 'wall').length * 2;
   add('Фурнитура', 'Петли', hinges, 'шт.', prices.hinge[tier]);
-  add('Фурнитура', 'Ручки', doors.length, 'шт.', prices.handle[tier]);
+  add('Фурнитура', 'Ручки', doorParts.length, 'шт.', prices.handle[tier]);
   add('Фурнитура', 'Полкодержатели', shelves * 4, 'шт.', prices.shelfSupport[tier]);
   add('Фурнитура', 'Ножки регулируемые', legs, 'шт.', prices.leg[tier]);
   add('Фурнитура', 'Навесы для верхних шкафов', hangers, 'шт.', prices.hanger[tier]);
-  add('Фурнитура', 'Крепёж, конфирматы, мелочи', project.modules.length, 'корпус', prices.fastenersPerModule[tier]);
+  add('Фурнитура', 'Крепёж, конфирматы, мелочи', modules.length, 'корпус', prices.fastenersPerModule[tier]);
 
-  // Купе: система на каждую дверь и заполнение.
-  let coupeDoors = 0;
-  for (const m of project.modules) {
-    if (!m.sliding) continue;
-    const s = calculateSliding(m, project.thickness);
-    if (s.errors.length) continue;
-    coupeDoors += m.sliding.count;
-    add('Двери купе', 'Зеркало', s.fills.filter((f) => f.kind === 'mirror').reduce((a, f) => a + (f.width * f.height) / 1e6, 0), 'м²', prices.mirrorM2);
-    add('Двери купе', 'Вставка ДСП', s.fills.filter((f) => f.kind === 'board').reduce((a, f) => a + (f.width * f.height) / 1e6, 0), 'м²', prices.boardFillM2);
+  if (doors) {
+    add('Двери купе', 'Система на дверь: профили, ролики, крепёж, щётка', doors.count, 'дверь', prices.coupeDoor[tier]);
+    add('Двери купе', 'Направляющие верхняя + нижняя', doors.railMeters, 'пог. м', prices.railsPerM);
+    add('Двери купе', 'Разделительный профиль', doors.dividerMeters, 'м', prices.dividerPerM);
+    add('Двери купе', 'Зеркало 4 мм', doors.area.mirror, 'м²', prices.mirrorM2);
+    add('Двери купе', 'Стекло 4 мм', doors.area.glass, 'м²', prices.glassM2);
+    add('Двери купе', 'Вставки ДСП 10 мм', doors.area.board, 'м²', prices.boardFillM2);
   }
-  add('Двери купе', 'Профиль и ролики (система)', coupeDoors, 'дверь', prices.coupeDoor[tier]);
 
   if (order.kind === 'kitchen') {
     const lowerM = kitchenModules.filter((m) => m.kitchen!.kind !== 'wall').reduce((a, m) => a + m.width, 0) / 1000;
@@ -172,20 +192,35 @@ export function calcQuote(order: Order, prices: PriceList = defaultPrices): Quot
   const cost = materials + labor + delivery;
 
   const summary: string[] = [];
-  summary.push(`Корпус из ЛДСП 18 мм${ldspFronts || !doors.length ? '' : ', фасады — ' + { mdf_film: 'МДФ в плёнке', mdf_paint: 'МДФ крашеный', acrylic: 'акрил' }[order.facade as Exclude<Facade, 'ldsp'>]}`);
-  if (doors.length) summary.push(`${doors.length} ${plural(doors.length, 'дверь', 'двери', 'дверей')} на ${hinges} ${plural(hinges, 'петле', 'петлях', 'петлях')}`);
-  if (coupeDoors) summary.push(`${coupeDoors} ${plural(coupeDoors, 'дверь', 'двери', 'дверей')} купе`);
+  if (!doorsOnly) {
+    summary.push(`Корпус из ЛДСП 18 мм${ldspFronts || !doorParts.length ? '' : ', фасады — ' + { mdf_film: 'МДФ в плёнке', mdf_paint: 'МДФ крашеный', acrylic: 'акрил' }[order.facade as Exclude<Facade, 'ldsp'>]}`);
+  }
+  if (doorParts.length) summary.push(`${doorParts.length} ${plural(doorParts.length, 'дверь', 'двери', 'дверей')} на ${hinges} ${plural(hinges, 'петле', 'петлях', 'петлях')}`);
+  if (doors) {
+    summary.push(`${doors.count} ${plural(doors.count, 'дверь', 'двери', 'дверей')} купе ${Math.round(doors.doorWidth)}×${Math.round(doors.doorHeight)} мм`);
+    const fills = [...new Set(doors.pieces.map((f) => fillInfo[f.fill].title.toLowerCase()))];
+    summary.push(`Наполнение: ${fills.join(', ')}`);
+    summary.push(`Профиль ADS, цвет ${colorNames[order.doors.color].title.toLowerCase()}`);
+  }
   if (shelves) summary.push(`${shelves} ${plural(shelves, 'полка', 'полки', 'полок')}`);
   if (order.kind === 'kitchen' && order.kitchen.worktop) summary.push('Столешница');
-  summary.push({ eco: 'Фурнитура эконом-класса', standard: 'Фурнитура с доводчиками', premium: 'Фурнитура Blum' }[tier]);
+  if (doors) summary.push({ eco: 'Раздвижная система эконом', standard: 'Раздвижная система стандарт', premium: 'Раздвижная система премиум' }[tier]);
+  if (doorParts.length || (modules.length && !doors)) summary.push({ eco: 'Фурнитура эконом-класса', standard: 'Фурнитура с доводчиками', premium: 'Фурнитура Blum' }[tier]);
   if (order.delivery) summary.push('Доставка');
-  if (order.install) summary.push('Сборка и установка у вас дома');
+  if (order.install) summary.push(doorsOnly ? 'Установка дверей' : 'Сборка и установка у вас дома');
+
+  const worktop = order.kind === 'kitchen' && order.kitchen.worktop;
+  const scene = project
+    ? buildScene(project, { worktop, sliding: doors, profileColor: colorNames[order.doors.color].swatch })
+    : nicheScene(order.size, doors!, colorNames[order.doors.color].swatch);
 
   return {
     ok: errors.length === 0,
     problems: errors,
     warnings,
     project,
+    doors,
+    scene,
     parts,
     lines,
     materials,

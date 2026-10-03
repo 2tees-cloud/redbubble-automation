@@ -2,12 +2,12 @@
 // Пользователь не задаёт секции, полки и планки — всё подбирается само.
 import { defaultProject, type Module, type Project } from './furniture';
 import { makeModule } from './kitchen';
+import { defaultDoors, designFor, suggestCount, type DoorsSpec, type ProfileId } from './doors';
 
-export type Kind = 'wardrobe' | 'coupe' | 'kitchen' | 'cabinet' | 'shelving';
+export type Kind = 'wardrobe' | 'coupe' | 'doors' | 'kitchen' | 'cabinet' | 'shelving';
 export type Facade = 'ldsp' | 'mdf_film' | 'mdf_paint' | 'acrylic';
 export type Tier = 'eco' | 'standard' | 'premium';
 export type Color = 'white' | 'oak' | 'walnut' | 'graphite';
-export type CoupeFill = 'mirror' | 'board' | 'mix';
 export type Status = 'quote' | 'agreed' | 'production' | 'done';
 
 export interface Order {
@@ -19,7 +19,8 @@ export interface Order {
   kind: Kind;
   size: { width: number; height: number; depth: number };
   kitchen: { bottomLength: number; topLength: number; sink: boolean; tallCount: number; worktop: boolean };
-  coupeFill: CoupeFill;
+  /** Двери купе: для шкафа-купе и для дверей в нишу. */
+  doors: DoorsSpec;
   facade: Facade;
   hardware: Tier;
   color: Color;
@@ -30,7 +31,8 @@ export interface Order {
 
 export const kindInfo: Record<Kind, { title: string; hint: string }> = {
   wardrobe: { title: 'Шкаф', hint: 'Распашные двери' },
-  coupe: { title: 'Шкаф-купе', hint: 'Раздвижные двери' },
+  coupe: { title: 'Шкаф-купе', hint: 'Корпус с дверями купе' },
+  doors: { title: 'Двери купе', hint: 'В готовую нишу' },
   kitchen: { title: 'Кухня', hint: 'Нижние и верхние шкафы' },
   cabinet: { title: 'Тумба / комод', hint: 'Невысокая, с дверцами' },
   shelving: { title: 'Стеллаж', hint: 'Открытые полки' },
@@ -67,6 +69,7 @@ export const statusInfo: Record<Status, string> = {
 export const sizeDefaults: Record<Exclude<Kind, 'kitchen'>, Order['size']> = {
   wardrobe: { width: 1800, height: 2400, depth: 600 },
   coupe: { width: 2000, height: 2400, depth: 600 },
+  doors: { width: 2000, height: 2500, depth: 600 },
   cabinet: { width: 1200, height: 800, depth: 450 },
   shelving: { width: 1000, height: 2000, depth: 350 },
 };
@@ -74,6 +77,8 @@ export const sizeDefaults: Record<Exclude<Kind, 'kitchen'>, Order['size']> = {
 export const sizeLimits: Record<Exclude<Kind, 'kitchen'>, Record<'width' | 'height' | 'depth', [number, number]>> = {
   wardrobe: { width: [400, 6000], height: [600, 3000], depth: [300, 800] },
   coupe: { width: [1200, 3000], height: [1500, 3000], depth: [450, 800] },
+  // Для дверей в нишу это чистовой проём; глубина ниши нужна только для картинки.
+  doors: { width: [1000, 6000], height: [400, 3240], depth: [100, 1500] },
   cabinet: { width: [300, 3000], height: [300, 1200], depth: [250, 700] },
   shelving: { width: [300, 6000], height: [300, 3000], depth: [200, 700] },
 };
@@ -96,7 +101,7 @@ export function newOrder(): Order {
     kind: 'wardrobe',
     size: { ...sizeDefaults.wardrobe },
     kitchen: { bottomLength: 2400, topLength: 1800, sink: true, tallCount: 0, worktop: true },
-    coupeFill: 'mix',
+    doors: structuredClone(defaultDoors),
     facade: 'ldsp',
     hardware: 'standard',
     color: 'white',
@@ -108,6 +113,7 @@ export function newOrder(): Order {
 
 export function orderTitle(o: Order) {
   if (o.kind === 'kitchen') return `Кухня ${(o.kitchen.bottomLength / 1000).toFixed(1).replace('.', ',')} м`;
+  if (o.kind === 'doors') return `Двери купе в проём ${o.size.width}×${o.size.height}`;
   return `${kindInfo[o.kind].title} ${o.size.width}×${o.size.height}×${o.size.depth}`;
 }
 
@@ -201,16 +207,17 @@ function bodyModules(o: Order): Module[] {
     const positionX = x;
     x += w;
     if (o.kind === 'coupe') {
-      const count = w <= 2400 ? 2 : 3;
-      const fills = Array.from({ length: count }, (_, j) =>
-        o.coupeFill === 'mix' ? (j % 2 === 0 ? 'mirror' : 'board') : o.coupeFill,
-      ) as ('mirror' | 'board')[];
+      // Двери считает engine/doors.ts по проёму корпуса. Здесь — только отступ полок под систему
+      // и совместимость со старым расчётом корпуса (он знает 2–3 двери и базовые профили).
+      const profile = o.doors.profile.replace('L', '') as Exclude<ProfileId, `${string}L`>;
+      const count = Math.min(3, Math.max(2, o.doors.count || suggestCount(w - 36, o.doors.profile))) as 2 | 3;
+      const fills = Array.from({ length: count }, (_, j) => designFor(o.doors, j)[0].fill);
       return {
         id, name, width: w, height, depth, positionX,
         sections: clampInt(w / 900, 1, 6),
         shelves: clampInt(height / 500, 1, 8),
         doors: true, back: true,
-        sliding: { profile: '020', count: count as 2 | 3, reserve: 90, railAllowance: 0, fills },
+        sliding: { profile, count, reserve: 90, railAllowance: 0, fills },
       };
     }
     if (o.kind === 'shelving') {

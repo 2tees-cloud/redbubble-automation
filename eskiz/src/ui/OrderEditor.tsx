@@ -5,16 +5,11 @@ import {
 } from '../engine/order';
 import { calcQuote, type PriceList } from '../engine/pricing';
 import { money } from '../storage';
+import DoorDesigner from './DoorDesigner';
 import FurnitureView from './FurnitureView';
 
 const Viewer3D = lazy(() => import('./Viewer3D'));
 import { Choice, NumberField, TextField, Toggle } from './fields';
-
-const coupeFills = {
-  mix: { title: 'Зеркало + ДСП', hint: 'Двери чередуются' },
-  mirror: { title: 'Все зеркала' },
-  board: { title: 'Все из ДСП' },
-} as const;
 
 export default function OrderEditor({
   order, prices, onChange, onProposal, onWorkshop,
@@ -35,7 +30,7 @@ export default function OrderEditor({
 
   const lim = order.kind !== 'kitchen' ? sizeLimits[order.kind] : null;
   const canPrice = quote && quote.ok;
-  const worktop = order.kind === 'kitchen' && order.kitchen.worktop;
+  const sliding = order.kind === 'coupe' || order.kind === 'doors';
 
   return (
     <div className="editor">
@@ -47,7 +42,12 @@ export default function OrderEditor({
 
         <section>
           <h2><i>2</i>Размеры</h2>
-          {lim ? (
+          {order.kind === 'doors' && lim ? (
+            <div className="row2">
+              <NumberField label="Ширина проёма (чистовая)" value={order.size.width} min={lim.width[0]} max={lim.width[1]} onChange={(v) => size('width', v)} hint="Меряйте вверху, посередине и внизу — берите меньшее" />
+              <NumberField label="Высота проёма (чистовая)" value={order.size.height} min={lim.height[0]} max={lim.height[1]} onChange={(v) => size('height', v)} hint="Слева, по центру и справа — берите меньшее" />
+            </div>
+          ) : lim ? (
             <div className="row3">
               <NumberField label="Ширина" value={order.size.width} min={lim.width[0]} max={lim.width[1]} onChange={(v) => size('width', v)} />
               <NumberField label="Высота" value={order.size.height} min={lim.height[0]} max={lim.height[1]} onChange={(v) => size('height', v)} />
@@ -68,18 +68,26 @@ export default function OrderEditor({
               </div>
             </>
           )}
-          {order.kind === 'coupe' && <Choice label="Двери купе" value={order.coupeFill} options={coupeFills} onChange={(v) => set({ coupeFill: v })} />}
           {issues.length > 0 && (
             <ul className="issues">{issues.map((x) => <li key={x}>{x}</li>)}</ul>
           )}
         </section>
 
         <section>
-          <h2><i>3</i>Материал и цвет</h2>
-          {order.kind !== 'coupe' && order.kind !== 'shelving' && (
+          <h2><i>3</i>{sliding ? 'Двери и цвет' : 'Материал и цвет'}</h2>
+          {sliding && (
+            <DoorDesigner
+              spec={order.doors}
+              openingWidth={order.kind === 'doors' ? order.size.width : order.size.width - 36}
+              result={quote?.doors}
+              boardColor={colorInfo[order.color].swatch}
+              onChange={(doors) => set({ doors })}
+            />
+          )}
+          {!sliding && order.kind !== 'shelving' && (
             <Choice label="Фасады (двери)" value={order.facade} options={facadeInfo} onChange={(v) => set({ facade: v })} />
           )}
-          <Choice label="Цвет корпуса" value={order.color} options={colorInfo} swatches={Object.fromEntries(Object.entries(colorInfo).map(([k, v]) => [k, v.swatch]))} onChange={(v) => set({ color: v })} />
+          <Choice label={order.kind === 'doors' ? 'Цвет вставок ДСП' : 'Цвет корпуса'} value={order.color} options={colorInfo} swatches={Object.fromEntries(Object.entries(colorInfo).map(([k, v]) => [k, v.swatch]))} onChange={(v) => set({ color: v })} />
         </section>
 
         <section>
@@ -114,8 +122,8 @@ export default function OrderEditor({
       <aside className="result">
         {quote ? (
           <>
-            <Suspense fallback={<FurnitureView project={quote.project} color={order.color} doors worktop={worktop} />}>
-              <Viewer3D project={quote.project} color={order.color} facade={order.facade} worktop={worktop} />
+            <Suspense fallback={<FurnitureView scene={quote.scene} color={order.color} />}>
+              <Viewer3D scene={quote.scene} color={order.color} facade={order.facade} />
             </Suspense>
             {canPrice ? (
               <div className="price">

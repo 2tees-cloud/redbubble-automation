@@ -1,7 +1,8 @@
 // То, что клиент видит по ссылке: 3D, описание, цена и кнопка «Позвонить».
 import { lazy, Suspense, useEffect, useState } from 'react';
-import type { Project } from '../engine/furniture';
-import { buildProject, checkOrder, colorInfo, facadeInfo, kindInfo, orderTitle, tierInfo, type Order } from '../engine/order';
+import type { Scene } from '../engine/geometry';
+import { checkOrder, colorInfo, facadeInfo, kindInfo, orderTitle, tierInfo, type Order } from '../engine/order';
+import { calcQuote } from '../engine/pricing';
 import { decodeShare, type Shared } from '../share';
 import { money } from '../storage';
 import FurnitureView from './FurnitureView';
@@ -9,13 +10,13 @@ import FurnitureView from './FurnitureView';
 const Viewer3D = lazy(() => import('./Viewer3D'));
 
 export default function ClientView({ code }: { code: string }) {
-  const [state, setState] = useState<{ data: Shared; order: Order; project: Project } | null | 'loading'>('loading');
+  const [state, setState] = useState<{ data: Shared; order: Order; scene: Scene } | null | 'loading'>('loading');
   useEffect(() => {
     let alive = true;
     decodeShare(code).then((data) => {
       if (!alive) return;
       const order: Order | null = data ? { ...data.order, note: '' } : null;
-      setState(data && order && !checkOrder(order).length ? { data, order, project: buildProject(order) } : null);
+      setState(data && order && !checkOrder(order).length ? { data, order, scene: calcQuote(order).scene } : null);
     });
     return () => {
       alive = false;
@@ -25,17 +26,16 @@ export default function ClientView({ code }: { code: string }) {
   if (state === 'loading') return <div className="empty">Загружаем проект…</div>;
   if (!state) return <div className="empty">Ссылка повреждена. Попросите мастера прислать её ещё раз.</div>;
 
-  const { data, order, project } = state;
-  const hasFacades = order.kind !== 'coupe' && order.kind !== 'shelving';
-  const worktop = order.kind === 'kitchen' && order.kitchen.worktop;
+  const { data, order, scene } = state;
+  const hasFacades = order.kind !== 'coupe' && order.kind !== 'doors' && order.kind !== 'shelving';
   const phone = data.company.phone.replace(/[^\d+]/g, '');
 
   return (
     <div className="client-view">
       <p className="from">{data.company.name}</p>
       <h2>{orderTitle(order)}</h2>
-      <Suspense fallback={<FurnitureView project={project} color={order.color} doors worktop={worktop} />}>
-        <Viewer3D project={project} color={order.color} facade={order.facade} worktop={worktop} />
+      <Suspense fallback={<FurnitureView scene={scene} color={order.color} />}>
+        <Viewer3D scene={scene} color={order.color} facade={order.facade} />
       </Suspense>
 
       <div className="spec card-block">

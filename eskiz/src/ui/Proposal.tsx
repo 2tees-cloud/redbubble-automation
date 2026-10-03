@@ -31,10 +31,9 @@ export default function Proposal({ order, quote, company }: { order: Order; quot
     };
   }, [order, quote, company]);
   const text = proposalText(order, quote, company, link);
-  const worktop = order.kind === 'kitchen' && order.kitchen.worktop;
   const date = new Date(order.updatedAt).toLocaleDateString('ru-RU');
   const number = order.id.slice(0, 6).toUpperCase();
-  const hasFacades = order.kind !== 'coupe' && order.kind !== 'shelving';
+  const hasFacades = order.kind !== 'coupe' && order.kind !== 'doors' && order.kind !== 'shelving';
 
   const share = async () => {
     try {
@@ -83,18 +82,18 @@ export default function Proposal({ order, quote, company }: { order: Order; quot
 
         <h2>{orderTitle(order)}</h2>
         <div className="no-print">
-          <Suspense fallback={<FurnitureView project={quote.project} color={order.color} doors worktop={worktop} />}>
-            <Viewer3D project={quote.project} color={order.color} facade={order.facade} worktop={worktop} />
+          <Suspense fallback={<FurnitureView scene={quote.scene} color={order.color} />}>
+            <Viewer3D scene={quote.scene} color={order.color} facade={order.facade} />
           </Suspense>
         </div>
         <div className="print-only">
-          <FurnitureView project={quote.project} color={order.color} doors worktop={worktop} />
+          <FurnitureView scene={quote.scene} color={order.color} />
         </div>
 
         <div className="spec">
           <dl>
             <dt>Изделие</dt><dd>{kindInfo[order.kind].title}</dd>
-            <dt>Цвет корпуса</dt><dd>{colorInfo[order.color].title}</dd>
+            <dt>{order.kind === 'doors' ? 'Цвет ДСП' : 'Цвет корпуса'}</dt><dd>{colorInfo[order.color].title}</dd>
             {hasFacades && <><dt>Фасады</dt><dd>{facadeInfo[order.facade].title}</dd></>}
             <dt>Фурнитура</dt><dd>{tierInfo[order.hardware].title}: {tierInfo[order.hardware].hint}</dd>
             <dt>Срок</dt><dd>{company.leadTime}</dd>

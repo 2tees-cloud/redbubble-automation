@@ -1,20 +1,19 @@
 // Плоская объёмная картинка (SVG). Нужна для печати/PDF и как запасной вид, если нет 3D.
 import { useId, useMemo } from 'react';
-import type { Project } from '../engine/furniture';
-import { buildScene, type Role } from '../engine/geometry';
+import type { Role, Scene } from '../engine/geometry';
 import { colorInfo, type Color } from '../engine/order';
 
 type Point = [number, number, number];
 type Face = { points: Point[]; tone: number; role: Role };
 
 const woodGrain: Record<Color, boolean> = { white: false, oak: true, walnut: true, graphite: false };
-const fixed: Partial<Record<Role, string>> = { mirror: '#c4dce3', metal: '#8a9498', handle: '#6f777b', worktop: '#5a554e' };
+const fixed: Partial<Record<Role, string>> = { mirror: '#c4dce3', glass: '#d6e0df', metal: '#8a9498', handle: '#6f777b', worktop: '#5a554e', wall: '#e2ded5' };
 
 function shade(hex: string, factor: number) {
   return '#' + [1, 3, 5].map((i) => Math.min(255, Math.round(parseInt(hex.slice(i, i + 2), 16) * factor)).toString(16).padStart(2, '0')).join('');
 }
 
-export default function FurnitureView({ project, color, doors, worktop, angle = 24 }: { project: Project; color: Color; doors: boolean; worktop?: boolean; angle?: number }) {
+export default function FurnitureView({ scene, color, angle = 24 }: { scene: Scene; color: Color; angle?: number }) {
   const uid = useId().replaceAll(':', '');
   const base = colorInfo[color].swatch;
   const theta = (angle * Math.PI) / 180;
@@ -24,7 +23,6 @@ export default function FurnitureView({ project, color, doors, worktop, angle = 
     Math.sin(theta) * Math.sin(phi) * x - Math.cos(phi) * y - Math.cos(theta) * Math.sin(phi) * z,
   ];
 
-  const scene = useMemo(() => buildScene(project, { doors, worktop }), [project, doors, worktop]);
   const faces = useMemo(() => {
     const out: Face[] = [];
     for (const b of scene.boxes) {
@@ -48,7 +46,8 @@ export default function FurnitureView({ project, color, doors, worktop, angle = 
     const p = proj([x, 0, z]);
     return `${p[0] * scale + tx},${p[1] * scale + ty}`;
   };
-  const colorOf = (f: Face) => shade(fixed[f.role] ?? base, f.tone);
+  const tint = (r: Role) => (r === 'metal' && scene.profileColor ? scene.profileColor : fixed[r] ?? base);
+  const colorOf = (f: Face) => shade(tint(f.role), f.tone);
 
   return (
     <figure className="view">
@@ -75,7 +74,7 @@ export default function FurnitureView({ project, color, doors, worktop, angle = 
             const points = f.points.map(proj).map((p) => p.join(',')).join(' ');
             return (
               <g key={i}>
-                <polygon points={points} fill={colorOf(f)} stroke={shade(fixed[f.role] ?? base, f.tone * 0.85)} strokeWidth={0.55 / scale} strokeLinejoin="round" />
+                <polygon points={points} fill={colorOf(f)} stroke={shade(tint(f.role), f.tone * 0.85)} strokeWidth={0.55 / scale} strokeLinejoin="round" />
                 {woodGrain[color] && (f.role === 'body' || f.role === 'front') && <polygon points={points} fill={`url(#${uid}grain)`} />}
               </g>
             );

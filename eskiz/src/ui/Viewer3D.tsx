@@ -4,8 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import type { Project } from '../engine/furniture';
-import { buildScene, type Box } from '../engine/geometry';
+import type { Box, Scene } from '../engine/geometry';
 import { colorInfo, type Color, type Facade } from '../engine/order';
 import FurnitureView from './FurnitureView';
 
@@ -40,10 +39,9 @@ function woodTexture(hex: string) {
 type Mover = { group: THREE.Group; box: Box };
 
 interface Props {
-  project: Project;
+  scene: Scene;
   color: Color;
   facade: Facade;
-  worktop?: boolean;
 }
 
 export default function Viewer3D(props: Props) {
@@ -176,7 +174,8 @@ export default function Viewer3D(props: Props) {
     disposeGroup(w.furniture);
     w.furniture.clear();
     w.movers = [];
-    const sc = buildScene(props.project, { doors: true, worktop: props.worktop });
+    const sc = props.scene;
+    const metal = sc.profileColor ?? '#a3abae';
     const base = colorInfo[props.color].swatch;
     const wood = props.color === 'oak' || props.color === 'walnut';
     const tex = wood ? woodTexture(base) : null;
@@ -188,7 +187,9 @@ export default function Viewer3D(props: Props) {
     const materialFor = (b: Box): THREE.Material => {
       switch (b.role) {
         case 'mirror': return mat('mirror', () => new THREE.MeshStandardMaterial({ color: '#e4eef0', metalness: 1, roughness: 0.04 }));
-        case 'metal': return mat('metal', () => new THREE.MeshStandardMaterial({ color: '#a3abae', metalness: 0.85, roughness: 0.35 }));
+        case 'metal': return mat('metal', () => new THREE.MeshStandardMaterial({ color: metal, metalness: 0.85, roughness: 0.35 }));
+        case 'glass': return mat('glass', () => new THREE.MeshStandardMaterial({ color: '#d9e3e2', metalness: 0.1, roughness: 0.15 }));
+        case 'wall': return mat('wall', () => new THREE.MeshStandardMaterial({ color: '#e2ded5', roughness: 0.95 }));
         case 'handle': return mat('handle', () => new THREE.MeshStandardMaterial({ color: '#4d5356', metalness: 0.9, roughness: 0.3 }));
         case 'worktop': return mat('worktop', () => new THREE.MeshStandardMaterial({ color: '#6b645b', roughness: 0.5 }));
         case 'plinth': return mat('plinth', () => new THREE.MeshStandardMaterial({ color: new THREE.Color(base).multiplyScalar(0.75), roughness: 0.8 }));
@@ -260,13 +261,13 @@ export default function Viewer3D(props: Props) {
       w.fitKey = key;
       w.fit();
     }
-  }, [props.project, props.color, props.facade, props.worktop]);
+  }, [props.scene, props.color, props.facade]);
 
   useEffect(() => {
     if (world.current) world.current.target = open ? 1 : 0;
   }, [open]);
 
-  if (failed) return <FurnitureView project={props.project} color={props.color} doors worktop={props.worktop} />;
+  if (failed) return <FurnitureView scene={props.scene} color={props.color} />;
 
   return (
     <div className="viewer3d">

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { csv, type Part } from '../engine/furniture';
 import type { Order } from '../engine/order';
 import { cuttingParts, facadeParts, type Group, type Quote } from '../engine/pricing';
-import { slidingCsv } from '../engine/sliding';
+import { doorsCsv, fillInfo } from '../engine/doors';
 import { viyarCsv, viyarGroups, viyarImportHelp, viyarIssues, type Orientation } from '../engine/viyar-export';
 import { money } from '../storage';
 
@@ -90,12 +90,14 @@ export default function Workshop({ order, quote }: { order: Order; quote: Quote 
             </button>
           ))}
           <button onClick={() => download(`${base}-detali.csv`, csv(quote.parts))}>Все детали (Excel)</button>
-          {quote.project.modules.filter((m) => m.sliding).map((m) => (
-            <button key={m.id} onClick={() => download(`${base}-kupe-${m.id}.csv`, slidingCsv(m, quote.project.thickness))}>Купе: профили и заполнение</button>
-          ))}
+          {quote.doors && (
+            <button onClick={() => download(`${base}-dveri-kupe.csv`, doorsCsv(quote.doors!, order.doors))}>Двери купе: спецификация</button>
+          )}
         </div>
         {(error || issues.length > 0) && <p className="issues">{error || issues.join(' ')}</p>}
       </section>
+
+      {quote.doors && <DoorsSpecView quote={quote} />}
 
       {fronts.length > 0 && (
         <section className="card-block">
@@ -134,5 +136,54 @@ export default function Workshop({ order, quote }: { order: Order; quote: Quote 
         </section>
       )}
     </div>
+  );
+}
+
+const fmt = (n: number) => String(n).replace('.', ',');
+
+function DoorsSpecView({ quote }: { quote: Quote }) {
+  const r = quote.doors!;
+  // Одинаковые вставки собираем в одну строку — так удобнее заказывать у стекольщика.
+  const grouped = new Map<string, { name: string; height: number; width: number; thickness: number; qty: number; doors: number[] }>();
+  for (const f of r.pieces) {
+    const key = `${f.fill}|${f.height}|${f.width}`;
+    const g = grouped.get(key) ?? { name: fillInfo[f.fill].title, height: f.height, width: f.width, thickness: f.thickness, qty: 0, doors: [] };
+    g.qty += 1;
+    if (!g.doors.includes(f.door)) g.doors.push(f.door);
+    grouped.set(key, g);
+  }
+  return (
+    <section className="card-block">
+      <h2>Двери купе</h2>
+      <div className="money-row">
+        <div><span>Проём</span><strong>{fmt(r.openingWidth)} × {fmt(r.openingHeight)}</strong></div>
+        <div><span>Дверь, {r.count} шт.</span><strong>{fmt(r.doorWidth)} × {fmt(r.doorHeight)}</strong></div>
+        <div><span>Перехлёстов</span><strong>{r.overlaps}</strong></div>
+      </div>
+      <h3>Профили — порезка</h3>
+      <table className="lines">
+        <thead><tr><th>Профиль</th><th>Длина, мм</th><th>Кол-во</th></tr></thead>
+        <tbody>{r.profiles.map((p) => <tr key={p.name}><td>{p.name}</td><td>{fmt(p.length)}</td><td>{p.qty}</td></tr>)}</tbody>
+      </table>
+      <h3>Наполнение (высота × ширина)</h3>
+      <table className="lines">
+        <thead><tr><th>Материал</th><th>Размер, мм</th><th>Кол-во</th><th>Двери</th></tr></thead>
+        <tbody>
+          {[...grouped.values()].map((g) => (
+            <tr key={g.name + g.height + g.width}>
+              <td>{g.name} {g.thickness} мм</td>
+              <td>{fmt(g.height)} × {fmt(g.width)}</td>
+              <td>{g.qty}</td>
+              <td>{g.doors.join(', ')}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <h3>Фурнитура</h3>
+      <table className="lines">
+        <tbody>{r.hardware.map((h) => <tr key={h.name}><td>{h.name}</td><td>{fmt(h.qty)} {h.unit}</td></tr>)}</tbody>
+      </table>
+      <p className="small muted">Вставки ДСП 10 мм уже в файлах для ВіЯр отдельным материалом. Расчёт — по таблицам 1–3 каталога ADS BRAND.</p>
+    </section>
   );
 }
