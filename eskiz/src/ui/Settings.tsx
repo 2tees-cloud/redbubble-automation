@@ -9,6 +9,7 @@ type TierKey = { [K in keyof PriceList]: PriceList[K] extends TierPrices ? K : n
 
 const plate: [NumKey, string, string][] = [
   ['ldspSheet', 'ЛДСП 18 мм, лист 2800×2070', 'грн'],
+  ['ldsp16Sheet', 'ЛДСП 16 мм для коробов ящиков, лист', 'грн'],
   ['hdfSheet', 'ХДФ 3 мм, лист', 'грн'],
   ['cutPerSheet', 'Порезка, за лист', 'грн'],
   ['edgePerM', 'Кромка, материал', 'грн/м'],
@@ -16,6 +17,9 @@ const plate: [NumKey, string, string][] = [
 ];
 const other: [NumKey, string, string][] = [
   ['mirrorM2', 'Зеркало для купе', 'грн/м²'],
+  ['glassM2', 'Стекло для купе', 'грн/м²'],
+  ['railsPerM', 'Направляющие купе (верх + низ)', 'грн/м'],
+  ['dividerPerM', 'Разделительный профиль купе', 'грн/м'],
   ['boardFillM2', 'Вставка ДСП в купе', 'грн/м²'],
   ['worktopPerM', 'Столешница', 'грн/м'],
   ['plinthPerM', 'Цоколь', 'грн/м'],
@@ -28,6 +32,7 @@ const business: [NumKey, string, string][] = [
 ];
 const tiers: [TierKey, string][] = [
   ['hinge', 'Петля'],
+  ['slidePair', 'Направляющие на 1 ящик (пара)'],
   ['handle', 'Ручка'],
   ['leg', 'Ножка кухонная'],
   ['hanger', 'Навес для верхнего шкафа'],

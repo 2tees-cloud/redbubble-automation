@@ -3,6 +3,8 @@
 import type { Project } from './furniture';
 import { frontCount, hasRails, moduleLayout } from './kitchen';
 import type { DoorsResult } from './doors';
+import { drawerLayout, type DrawerModule } from './drawers';
+import type { Tier } from './order';
 
 export type Role = 'body' | 'back' | 'front' | 'mirror' | 'glass' | 'metal' | 'worktop' | 'plinth' | 'handle' | 'wall';
 
@@ -14,7 +16,9 @@ export interface Box {
   hinge?: 'left' | 'right';
   /** Дверь купе: на сколько мм она уезжает в открытом виде. */
   slide?: number;
-  /** Ручка принадлежит двери с этим индексом и двигается вместе с ней. */
+  /** Ящик: на сколько мм он выдвигается в открытом виде. */
+  pull?: number;
+  /** Ручка, вставка или короб принадлежит двери/ящику с этим индексом и двигается вместе с ним. */
   door?: number;
 }
 
@@ -29,7 +33,7 @@ export interface Scene {
 
 type Add = (b: Box) => number;
 
-export function buildScene(project: Project, opts: { doors?: boolean; worktop?: boolean; sliding?: DoorsResult; profileColor?: string } = {}): Scene {
+export function buildScene(project: Project, opts: { doors?: boolean; worktop?: boolean; sliding?: DoorsResult; profileColor?: string; tier?: Tier } = {}): Scene {
   const doors = opts.doors ?? true;
   const boxes: Box[] = [];
   const layout = moduleLayout(project.modules);
@@ -92,6 +96,31 @@ export function buildScene(project: Project, opts: { doors?: boolean; worktop?: 
     }
 
     if (doors && m.sliding && opts.sliding) addSlidingDoors(add, t, t, opts.sliding);
+
+    const dm = m as DrawerModule;
+    if (doors && dm.drawers) {
+      const d = drawerLayout(dm, project, opts.tier ?? 'standard');
+      if (!d.errors.length) {
+        d.fronts.forEach((f, i) => {
+          // Верхний ящик выезжает почти полностью, остальные — чуть: видно и короб, и ступеньки фасадов.
+          const pull = d.box.length * (i === d.fronts.length - 1 ? 0.7 : 0.2 + 0.1 * i);
+          // Короб добавляем раньше фасада (для плоской картинки), а привязываем к фасаду:
+          // его индекс известен заранее — после четырёх деталей короба.
+          const anchor = boxes.length + 4;
+          const L = d.box.length - 10;
+          const by = f.y + 15;
+          const bx = d.box.x;
+          const boxPart = (b: Omit<Box, 'pull' | 'door'>) => add({ ...b, pull, door: anchor });
+          boxPart({ x: bx, y: by - 3, z: 2, w: d.box.w, h: 3, d: L, role: 'back' });
+          boxPart({ x: bx, y: by, z: 2 + L - 16, w: d.box.w, h: d.box.h, d: 16, role: 'body' });
+          boxPart({ x: bx, y: by, z: 2, w: 16, h: d.box.h, d: L, role: 'body' });
+          boxPart({ x: bx + d.box.w - 16, y: by, z: 2, w: 16, h: d.box.h, d: L, role: 'body' });
+          add({ x: f.x, y: f.y, z: -t, w: f.w, h: f.h, d: t, role: 'front', pull });
+          const hw = Math.min(160, f.w * 0.4);
+          add({ x: f.x + (f.w - hw) / 2, y: f.y + f.h / 2 - 6, z: -t - 26, w: hw, h: 12, d: 26, role: 'handle', pull, door: anchor });
+        });
+      }
+    }
   }
 
   const xs = boxes.flatMap((b) => [b.x, b.x + b.w]);

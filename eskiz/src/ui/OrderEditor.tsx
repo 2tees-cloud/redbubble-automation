@@ -61,6 +61,9 @@ export default function OrderEditor({
               </div>
               <div className="row2">
                 <NumberField label="Пеналов (высоких шкафов)" unit="шт." value={order.kitchen.tallCount} min={0} max={3} onChange={(v) => kitchen({ tallCount: Math.round(v) })} hint="Под холодильник, духовку и т. п." />
+                <NumberField label="Тумб с ящиками" unit="шт." value={order.kitchen.drawerUnits} min={0} max={6} onChange={(v) => kitchen({ drawerUnits: Math.round(v) })} hint="По 3 ящика вместо дверцы и полки" />
+              </div>
+              <div className="row2">
                 <div className="toggles">
                   <Toggle label="Шкаф под мойку" checked={order.kitchen.sink} onChange={(v) => kitchen({ sink: v })} />
                   <Toggle label="Столешница" checked={order.kitchen.worktop} onChange={(v) => kitchen({ worktop: v })} />
@@ -85,7 +88,7 @@ export default function OrderEditor({
             />
           )}
           {!sliding && order.kind !== 'shelving' && (
-            <Choice label="Фасады (двери)" value={order.facade} options={facadeInfo} onChange={(v) => set({ facade: v })} />
+            <Choice label={order.kind === 'dresser' ? 'Фасады ящиков' : 'Фасады (двери и ящики)'} value={order.facade} options={facadeInfo} onChange={(v) => set({ facade: v })} />
           )}
           <Choice label={order.kind === 'doors' ? 'Цвет вставок ДСП' : 'Цвет корпуса'} value={order.color} options={colorInfo} swatches={Object.fromEntries(Object.entries(colorInfo).map(([k, v]) => [k, v.swatch]))} onChange={(v) => set({ color: v })} />
         </section>

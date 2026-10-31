@@ -149,6 +149,8 @@ export default function Viewer3D(props: Props) {
       for (const { group, box } of state.movers) {
         if (box.hinge) group.rotation.y = (box.hinge === 'left' ? -1 : 1) * state.open * THREE.MathUtils.degToRad(100);
         if (box.slide) group.position.x = (group.userData.baseX as number) + box.slide * MM * state.open;
+        // Ящик выезжает к зрителю: в three ось z смотрит на нас.
+        if (box.pull) group.position.z = (group.userData.baseZ as number) + box.pull * MM * state.open;
       }
       controls.update();
       renderer.render(scene, camera);
@@ -222,35 +224,38 @@ export default function Viewer3D(props: Props) {
     // Центр детали в координатах three: z смотрит на зрителя, поэтому глубина со знаком минус.
     const center = (b: Box) => new THREE.Vector3((b.x + b.w / 2) * MM, (b.y + b.h / 2) * MM, -(b.z + b.d / 2) * MM);
 
+    // Подвижные части: распашные двери (петли), двери купе (сдвиг), ящики (выдвижение).
+    // Сначала создаём их группы, потом вешаем на них ручки, вставки и короба —
+    // так дочерняя деталь может стоять в списке раньше своей двери или фасада.
+    const isAnchor = (b: Box) => b.door === undefined && (!!b.hinge || b.slide !== undefined || b.pull !== undefined);
     const groups = new Map<number, THREE.Group>();
     sc.boxes.forEach((b, i) => {
-      if (b.door !== undefined && groups.has(b.door)) {
-        // Ручка или заполнение — внутрь группы своей двери.
-        const g = groups.get(b.door)!;
-        const m = mesh(b);
+      if (!isAnchor(b)) return;
+      // Поворот вокруг петель: ось у заднего края двери со стороны петель.
+      const pivot = b.hinge
+        ? new THREE.Vector3((b.hinge === 'left' ? b.x : b.x + b.w) * MM, 0, -(b.z + b.d) * MM)
+        : new THREE.Vector3(0, 0, 0);
+      const g = new THREE.Group();
+      g.position.copy(pivot);
+      g.userData = { origin: pivot.clone(), baseX: pivot.x, baseZ: pivot.z };
+      const m = mesh(b);
+      m.position.copy(center(b).sub(pivot));
+      g.add(m);
+      w.furniture.add(g);
+      groups.set(i, g);
+      w.movers.push({ group: g, box: b });
+    });
+    sc.boxes.forEach((b) => {
+      if (isAnchor(b)) return;
+      const m = mesh(b);
+      const g = b.door !== undefined ? groups.get(b.door) : undefined;
+      if (g) {
         m.position.copy(center(b).sub(g.userData.origin as THREE.Vector3));
         g.add(m);
-        return;
+      } else {
+        m.position.copy(center(b));
+        w.furniture.add(m);
       }
-      if (b.hinge || b.slide !== undefined) {
-        // Поворот вокруг петель: ось у заднего края двери со стороны петель.
-        const pivot = b.hinge
-          ? new THREE.Vector3((b.hinge === 'left' ? b.x : b.x + b.w) * MM, 0, -(b.z + b.d) * MM)
-          : new THREE.Vector3(0, 0, 0);
-        const g = new THREE.Group();
-        g.position.copy(pivot);
-        g.userData = { origin: pivot.clone(), baseX: pivot.x };
-        const m = mesh(b);
-        m.position.copy(center(b).sub(pivot));
-        g.add(m);
-        w.furniture.add(g);
-        groups.set(i, g);
-        w.movers.push({ group: g, box: b });
-        return;
-      }
-      const m = mesh(b);
-      m.position.copy(center(b));
-      w.furniture.add(m);
     });
     // Мебель стоит по центру сцены.
     w.furniture.position.set((-sc.width / 2) * MM, 0, (sc.depth / 2) * MM);
@@ -273,7 +278,7 @@ export default function Viewer3D(props: Props) {
     <div className="viewer3d">
       <div ref={host} className="viewer3d-canvas" />
       <div className="viewer3d-bar">
-        <button onClick={() => setOpen((v) => !v)}>{open ? 'Закрыть двери' : 'Открыть двери'}</button>
+        <button onClick={() => setOpen((v) => !v)}>{open ? 'Закрыть' : 'Открыть двери и ящики'}</button>
         <button
           aria-label="Вернуть вид"
           onClick={() => {

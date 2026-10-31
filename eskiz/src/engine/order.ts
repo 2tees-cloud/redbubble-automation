@@ -3,8 +3,9 @@
 import { defaultProject, type Module, type Project } from './furniture';
 import { makeModule } from './kitchen';
 import { defaultDoors, designFor, suggestCount, type DoorsSpec, type ProfileId } from './doors';
+import { drawersFor, type DrawerModule } from './drawers';
 
-export type Kind = 'wardrobe' | 'coupe' | 'doors' | 'kitchen' | 'cabinet' | 'shelving';
+export type Kind = 'wardrobe' | 'coupe' | 'doors' | 'kitchen' | 'cabinet' | 'dresser' | 'shelving';
 export type Facade = 'ldsp' | 'mdf_film' | 'mdf_paint' | 'acrylic';
 export type Tier = 'eco' | 'standard' | 'premium';
 export type Color = 'white' | 'oak' | 'walnut' | 'graphite';
@@ -18,7 +19,7 @@ export interface Order {
   client: { name: string; phone: string; address: string };
   kind: Kind;
   size: { width: number; height: number; depth: number };
-  kitchen: { bottomLength: number; topLength: number; sink: boolean; tallCount: number; worktop: boolean };
+  kitchen: { bottomLength: number; topLength: number; sink: boolean; tallCount: number; worktop: boolean; drawerUnits: number };
   /** Двери купе: для шкафа-купе и для дверей в нишу. */
   doors: DoorsSpec;
   facade: Facade;
@@ -34,7 +35,8 @@ export const kindInfo: Record<Kind, { title: string; hint: string }> = {
   coupe: { title: 'Шкаф-купе', hint: 'Корпус с дверями купе' },
   doors: { title: 'Двери купе', hint: 'В готовую нишу' },
   kitchen: { title: 'Кухня', hint: 'Нижние и верхние шкафы' },
-  cabinet: { title: 'Тумба / комод', hint: 'Невысокая, с дверцами' },
+  cabinet: { title: 'Тумба', hint: 'Невысокая, с дверцами' },
+  dresser: { title: 'Комод', hint: 'С выдвижными ящиками' },
   shelving: { title: 'Стеллаж', hint: 'Открытые полки' },
 };
 
@@ -46,8 +48,8 @@ export const facadeInfo: Record<Facade, { title: string; hint: string }> = {
 };
 
 export const tierInfo: Record<Tier, { title: string; hint: string }> = {
-  eco: { title: 'Эконом', hint: 'Простые петли и ручки' },
-  standard: { title: 'Стандарт', hint: 'С доводчиками, Hettich / GTV' },
+  eco: { title: 'Эконом', hint: 'Простые петли, роликовые направляющие' },
+  standard: { title: 'Стандарт', hint: 'Доводчики, шариковые направляющие' },
   premium: { title: 'Премиум', hint: 'Blum — тихо и надолго' },
 };
 
@@ -71,6 +73,7 @@ export const sizeDefaults: Record<Exclude<Kind, 'kitchen'>, Order['size']> = {
   coupe: { width: 2000, height: 2400, depth: 600 },
   doors: { width: 2000, height: 2500, depth: 600 },
   cabinet: { width: 1200, height: 800, depth: 450 },
+  dresser: { width: 1000, height: 900, depth: 450 },
   shelving: { width: 1000, height: 2000, depth: 350 },
 };
 
@@ -80,10 +83,11 @@ export const sizeLimits: Record<Exclude<Kind, 'kitchen'>, Record<'width' | 'heig
   // Для дверей в нишу это чистовой проём; глубина ниши нужна только для картинки.
   doors: { width: [1000, 6000], height: [400, 3240], depth: [100, 1500] },
   cabinet: { width: [300, 3000], height: [300, 1200], depth: [250, 700] },
+  dresser: { width: [400, 3000], height: [300, 1400], depth: [300, 650] },
   shelving: { width: [300, 6000], height: [300, 3000], depth: [200, 700] },
 };
 
-export const kitchenLimits = { bottomLength: [600, 7000], topLength: [0, 7000], tallCount: [0, 3] } as const;
+export const kitchenLimits = { bottomLength: [600, 7000], topLength: [0, 7000], tallCount: [0, 3], drawerUnits: [0, 6] } as const;
 
 const newId = () =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -100,7 +104,7 @@ export function newOrder(): Order {
     client: { name: '', phone: '', address: '' },
     kind: 'wardrobe',
     size: { ...sizeDefaults.wardrobe },
-    kitchen: { bottomLength: 2400, topLength: 1800, sink: true, tallCount: 0, worktop: true },
+    kitchen: { bottomLength: 2400, topLength: 1800, sink: true, tallCount: 0, worktop: true, drawerUnits: 1 },
     doors: structuredClone(defaultDoors),
     facade: 'ldsp',
     hardware: 'standard',
@@ -127,6 +131,7 @@ export function checkOrder(o: Order): string[] {
     if (!(k.bottomLength >= bMin && k.bottomLength <= bMax)) issues.push(`Длина низа — от ${bMin} до ${bMax} мм.`);
     if (!(k.topLength >= 0 && k.topLength <= kitchenFreeTop(o))) issues.push(`Длина верха — не больше ${kitchenFreeTop(o)} мм (над нижними шкафами без пеналов).`);
     if (!(k.tallCount >= 0 && k.tallCount <= 3)) issues.push('Пеналов — от 0 до 3.');
+    if (!(k.drawerUnits >= 0 && k.drawerUnits <= 6)) issues.push('Тумб с ящиками — от 0 до 6.');
     const free = kitchenFreeTop(o);
     if (k.sink && free < 800) issues.push('Под мойку нужно хотя бы 800 мм низа (не считая пеналов).');
     if (!k.sink && free > 0 && free < 300) issues.push('Нижний шкаф не может быть уже 300 мм — измените длину или число пеналов.');
@@ -158,7 +163,8 @@ const clampInt = (v: number, min: number, max: number) => Math.max(min, Math.min
 
 function kitchenModules(o: Order): Module[] {
   const k = o.kitchen;
-  const modules: Module[] = [];
+  const modules: DrawerModule[] = [];
+  let drawerUnits = Math.round(k.drawerUnits);
   let x = 0;
   let n = 0;
   const add = (kind: 'base' | 'wall' | 'tall' | 'sink', width: number, positionX: number) => {
@@ -177,6 +183,12 @@ function kitchenModules(o: Order): Module[] {
   const sinkWidth = k.sink ? (rest > 0 && rest < 300 ? 800 + rest : 800) : 0;
   for (const w of split(lowerFree - sinkWidth, 600)) {
     add('base', w, x);
+    // Первые нижние тумбы — с тремя ящиками вместо двери и полки.
+    if (drawerUnits > 0) {
+      const m = modules[modules.length - 1];
+      Object.assign(m, { drawers: 3, doors: false, shelves: 0, name: `Тумба с ящиками ${w}` });
+      drawerUnits -= 1;
+    }
     x += w;
   }
   if (k.sink) {
@@ -198,7 +210,8 @@ function kitchenModules(o: Order): Module[] {
 function bodyModules(o: Order): Module[] {
   const { width, height, depth } = o.size;
   // Широкий шкаф собираем из нескольких корпусов: так их легче везти и заносить.
-  const maxBody = o.kind === 'coupe' ? 3000 : 2400;
+  // Комод — не шире 1000 мм на корпус: длинные ящики прогибаются и тяжело ходят.
+  const maxBody = o.kind === 'coupe' ? 3000 : o.kind === 'dresser' ? 1000 : 2400;
   const widths = split(width, maxBody);
   let x = 0;
   return widths.map((w, i) => {
@@ -222,6 +235,10 @@ function bodyModules(o: Order): Module[] {
     }
     if (o.kind === 'shelving') {
       return { id, name, width: w, height, depth, positionX, sections: clampInt(Math.ceil(w / 800), 1, 6), shelves: clampInt(height / 350, 1, 10), doors: false, back: true };
+    }
+    if (o.kind === 'dresser') {
+      const m: DrawerModule = { id, name, width: w, height, depth, positionX, sections: 1, shelves: 0, doors: false, back: true, drawers: drawersFor(height) };
+      return m;
     }
     if (o.kind === 'cabinet') {
       return { id, name, width: w, height, depth, positionX, sections: clampInt(Math.ceil(w / 600), 1, 6), shelves: height >= 600 ? 1 : 0, doors: true, back: true };
