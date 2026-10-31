@@ -4,6 +4,7 @@ import { defaultProject, type Module, type Project } from './furniture';
 import { makeModule } from './kitchen';
 import { defaultDoors, designFor, suggestCount, type DoorsSpec, type ProfileId } from './doors';
 import { drawersFor, type DrawerModule } from './drawers';
+import { CORNER, ROW_OFFSET, type KitchenModule, type WallRow } from './corner';
 
 export type Kind = 'wardrobe' | 'coupe' | 'doors' | 'kitchen' | 'cabinet' | 'dresser' | 'shelving';
 export type Facade = 'ldsp' | 'mdf_film' | 'mdf_paint' | 'acrylic';
@@ -19,7 +20,19 @@ export interface Order {
   client: { name: string; phone: string; address: string };
   kind: Kind;
   size: { width: number; height: number; depth: number };
-  kitchen: { bottomLength: number; topLength: number; sink: boolean; tallCount: number; worktop: boolean; drawerUnits: number };
+  kitchen: {
+    /** Прямая или угловая («Г»). Для угловой: стена A — с мойкой и пеналами, стена B — вторая. */
+    shape: 'straight' | 'corner';
+    bottomLength: number;
+    topLength: number;
+    /** Стена B, от угла: длина низа и верха. */
+    sideLength: number;
+    sideTop: number;
+    sink: boolean;
+    tallCount: number;
+    worktop: boolean;
+    drawerUnits: number;
+  };
   /** Двери купе: для шкафа-купе и для дверей в нишу. */
   doors: DoorsSpec;
   facade: Facade;
@@ -48,8 +61,8 @@ export const facadeInfo: Record<Facade, { title: string; hint: string }> = {
 };
 
 export const tierInfo: Record<Tier, { title: string; hint: string }> = {
-  eco: { title: 'Эконом', hint: 'Простые петли, шариковые направляющие' },
-  standard: { title: 'Стандарт', hint: 'Доводчики, скрытые направляющие GIFF PRIME' },
+  eco: { title: 'Эконом', hint: 'Простые петли, направляющие GIFF PRIME' },
+  standard: { title: 'Стандарт', hint: 'Доводчики, Hettich' },
   premium: { title: 'Премиум', hint: 'Blum — тихо и надолго' },
 };
 
@@ -104,7 +117,7 @@ export function newOrder(): Order {
     client: { name: '', phone: '', address: '' },
     kind: 'wardrobe',
     size: { ...sizeDefaults.wardrobe },
-    kitchen: { bottomLength: 2400, topLength: 1800, sink: true, tallCount: 0, worktop: true, drawerUnits: 1 },
+    kitchen: { shape: 'straight', bottomLength: 2400, topLength: 1800, sideLength: 1800, sideTop: 1200, sink: true, tallCount: 0, worktop: true, drawerUnits: 1 },
     doors: structuredClone(defaultDoors),
     facade: 'ldsp',
     hardware: 'standard',
@@ -116,7 +129,9 @@ export function newOrder(): Order {
 }
 
 export function orderTitle(o: Order) {
-  if (o.kind === 'kitchen') return `Кухня ${(o.kitchen.bottomLength / 1000).toFixed(1).replace('.', ',')} м`;
+  const m = (v: number) => (v / 1000).toFixed(1).replace('.', ',');
+  if (o.kind === 'kitchen' && o.kitchen.shape === 'corner') return `Угловая кухня ${m(o.kitchen.bottomLength)} × ${m(o.kitchen.sideLength)} м`;
+  if (o.kind === 'kitchen') return `Кухня ${m(o.kitchen.bottomLength)} м`;
   if (o.kind === 'doors') return `Двери купе в проём ${o.size.width}×${o.size.height}`;
   return `${kindInfo[o.kind].title} ${o.size.width}×${o.size.height}×${o.size.depth}`;
 }
@@ -135,6 +150,12 @@ export function checkOrder(o: Order): string[] {
     const free = kitchenFreeTop(o);
     if (k.sink && free < 800) issues.push('Под мойку нужно хотя бы 800 мм низа (не считая пеналов).');
     if (!k.sink && free > 0 && free < 300) issues.push('Нижний шкаф не может быть уже 300 мм — измените длину или число пеналов.');
+    if (k.shape === 'corner') {
+      if (!(k.sideLength >= 900 && k.sideLength <= 5000)) issues.push('Вторая стена, низ — от 900 до 5000 мм (600 из них занимает угол).');
+      if (free < CORNER.baseWidth + (k.sink ? 800 : 0)) issues.push(`На первой стене нужно ${CORNER.baseWidth + (k.sink ? 800 : 0)} мм под угловой шкаф${k.sink ? ' и мойку' : ''} (не считая пеналов).`);
+      if (!(k.sideTop >= 0 && k.sideTop <= k.sideLength)) issues.push('Вторая стена, верх — не длиннее низа.');
+      if (k.topLength > 0 && k.sideTop > 0 && k.topLength < CORNER.wallWidth) issues.push(`Верх первой стены — от ${CORNER.wallWidth} мм: там стоит угловой навесной шкаф.`);
+    }
     return issues;
   }
   const lim = sizeLimits[o.kind];
@@ -161,34 +182,47 @@ function split(length: number, maxPart: number): number[] {
 
 const clampInt = (v: number, min: number, max: number) => Math.max(min, Math.min(max, Math.round(v)));
 
+/** Делит ряд кухни на шкафы до 600 мм; остаток меньше 200 мм закрывается планкой, а не шкафом. */
+const kitchenSplit = (length: number) => (length < CORNER.minModule ? [] : split(length, 600));
+
 function kitchenModules(o: Order): Module[] {
   const k = o.kitchen;
-  const modules: DrawerModule[] = [];
+  const corner = k.shape === 'corner';
+  const modules: KitchenModule[] = [];
   let drawerUnits = Math.round(k.drawerUnits);
-  let x = 0;
   let n = 0;
-  const add = (kind: 'base' | 'wall' | 'tall' | 'sink', width: number, positionX: number) => {
+  const add = (kind: 'base' | 'wall' | 'tall' | 'sink', width: number, positionX: number, extra: Partial<KitchenModule> = {}) => {
     n += 1;
-    const m = makeModule(kind, `k${n}`);
+    const m: KitchenModule = makeModule(kind, `k${n}`);
     m.width = width;
     m.positionX = positionX;
     m.elevation = kind === 'wall' ? 1450 : 100;
     if (m.kitchen) m.kitchen.fronts = width > 600 ? 2 : 1;
     m.name = `${m.name} ${width}`;
+    Object.assign(m, extra);
     modules.push(m);
+    return m;
   };
+  // Первые нижние тумбы — с тремя ящиками вместо двери и полки.
+  const maybeDrawers = (m: KitchenModule) => {
+    if (drawerUnits <= 0) return;
+    Object.assign(m, { drawers: 3, doors: false, shelves: 0, name: `Тумба с ящиками ${m.width}` });
+    drawerUnits -= 1;
+  };
+
+  // Стена A: [угловой] [тумбы] [мойка] [пеналы]; верх: [угловой навесной] [навесные].
   const lowerFree = kitchenFreeTop(o);
+  let x = 0;
+  if (corner) {
+    // Глухой угловой: дверь только на открытой части, фасадов в старом расчёте нет — их считает corner.ts.
+    add('base', CORNER.baseWidth, 0, { blind: CORNER.baseBlind, doors: false, name: `Угловая тумба ${CORNER.baseWidth}` });
+    x = CORNER.baseWidth;
+  }
   // Остаток меньше 300 мм не делаем отдельным шкафом — отдаём его мойке.
-  const rest = lowerFree - (k.sink ? 800 : 0);
+  const rest = lowerFree - x - (k.sink ? 800 : 0);
   const sinkWidth = k.sink ? (rest > 0 && rest < 300 ? 800 + rest : 800) : 0;
-  for (const w of split(lowerFree - sinkWidth, 600)) {
-    add('base', w, x);
-    // Первые нижние тумбы — с тремя ящиками вместо двери и полки.
-    if (drawerUnits > 0) {
-      const m = modules[modules.length - 1];
-      Object.assign(m, { drawers: 3, doors: false, shelves: 0, name: `Тумба с ящиками ${w}` });
-      drawerUnits -= 1;
-    }
+  for (const w of split(lowerFree - x - sinkWidth, 600)) {
+    maybeDrawers(add('base', w, x));
     x += w;
   }
   if (k.sink) {
@@ -199,10 +233,37 @@ function kitchenModules(o: Order): Module[] {
     add('tall', 600, x);
     x += 600;
   }
+  const cornerTop = corner && k.topLength > 0 && k.sideTop > 0;
   let top = 0;
-  for (const w of split(Math.min(k.topLength, lowerFree), 600)) {
+  if (cornerTop) {
+    add('wall', CORNER.wallWidth, 0, { blind: CORNER.wallBlind, doors: false, name: `Угловой навесной ${CORNER.wallWidth}` });
+    top = CORNER.wallWidth;
+  }
+  for (const w of kitchenSplit(Math.min(k.topLength, lowerFree) - top)) {
     add('wall', w, top);
     top += w;
+  }
+
+  if (corner) {
+    // Стена B: идёт от угла к зрителю. Внизу угол занимает 600 мм (глубина тумбы A + зазор).
+    const low: WallRow = { depth: 560, startZ: -CORNER.gap, length: k.sideLength - CORNER.baseZone };
+    let bx = 0;
+    for (const w of kitchenSplit(low.length)) {
+      maybeDrawers(add('base', w, ROW_OFFSET + bx, { row: low }));
+      bx += w;
+    }
+    low.length = bx;
+    if (k.sideTop > 0) {
+      // Верх стены B начинается перед фасадами навесных стены A (или от самой стены, если их нет).
+      const startZ = k.topLength > 0 ? 560 - 320 - CORNER.wallGap : 560;
+      const up: WallRow = { depth: 320, startZ, length: k.sideTop - (560 - startZ) };
+      let ux = 0;
+      for (const w of kitchenSplit(up.length)) {
+        add('wall', w, ROW_OFFSET + ux, { row: up });
+        ux += w;
+      }
+      up.length = ux;
+    }
   }
   return modules;
 }

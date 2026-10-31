@@ -1,8 +1,8 @@
 // Выдвижные ящики: фасады, короб из ЛДСП 18 мм (тот же декор, что и корпус), дно из ХДФ.
 // Размер короба зависит от направляющих — их мастер настраивает сам (Настройки → Направляющие):
-//   боковой монтаж (шариковые):  короб снаружи = проём − вычет (обычно 26), длина = направляющая;
-//   скрытый монтаж (Blum Movento/Tandem и аналоги): короб ВНУТРИ = проём − вычет
-//   (Blum: 42), длина = направляющая − 10 (Blum).
+//   скрытый монтаж (Blum Movento/Tandem, Hettich, GIFF PRIME): короб ВНУТРИ = проём − вычет
+//   (Blum: 42), длина = направляющая − 10 (Blum). Боковины 18 мм — с запилом 2 мм по низу;
+//   боковой монтаж (шариковые): короб снаружи = проём − вычет (обычно 26), длина = направляющая.
 import type { Module, Part, Project } from './furniture';
 import type { Tier } from './order';
 
@@ -21,8 +21,8 @@ export interface SlideSpec {
 }
 
 export const defaultSlides: Record<Tier, SlideSpec> = {
-  eco: { name: 'Шариковые полного выдвижения', mount: 'side', widthDeduct: 26, lengthDeduct: 0 },
-  standard: { name: 'GIFF PRIME Clip 3D скрытого монтажа с доводчиком', mount: 'concealed', widthDeduct: 42, lengthDeduct: 10 },
+  eco: { name: 'GIFF PRIME скрытого монтажа с доводчиком', mount: 'concealed', widthDeduct: 42, lengthDeduct: 10 },
+  standard: { name: 'Hettich скрытого монтажа с доводчиком', mount: 'concealed', widthDeduct: 42, lengthDeduct: 10 },
   premium: { name: 'Blum Movento/Tandem скрытого монтажа', mount: 'concealed', widthDeduct: 42, lengthDeduct: 10 },
 };
 
@@ -56,7 +56,8 @@ export interface DrawerLayout {
 
 const r1 = (v: number) => Math.round(v * 10) / 10;
 
-function part(id: string, module: string, name: string, length: number, width: number, thickness: number, material: string, edges: [number, number, number, number]): Part {
+/** Деталь для деталировки, раскроя и файлов ВіЯр. Кромка: [L1, L2, W1, W2]. */
+export function makePart(id: string, module: string, name: string, length: number, width: number, thickness: number, material: string, edges: [number, number, number, number]): Part {
   const cutLength = r1(length - edges[2] - edges[3]);
   const cutWidth = r1(width - edges[0] - edges[1]);
   const edgeM = r1(((edges[0] > 0 ? length : 0) + (edges[1] > 0 ? length : 0) + (edges[2] > 0 ? width : 0) + (edges[3] > 0 ? width : 0)) / 1000);
@@ -83,8 +84,8 @@ export function drawerLayout(m: DrawerModule, project: Project, slide: SlideSpec
   if (!slideL) errors.push(`${m.name}: глубина ${m.depth} мм мала для направляющих (нужно от 270 мм).`);
   if (inner < 120) errors.push(`${m.name}: слишком узко для ящика.`);
   if (outer > opening) errors.push(`${m.name}: короб шире проёма — проверьте вычет направляющих в настройках.`);
-  if (slide.mount === 'concealed' && /blum/i.test(slide.name) && side > 16) {
-    warnings.push(`${m.name}: Blum Movento/Tandem по инструкции — для боковин ящика до 16 мм. С ЛДСП ${side} мм проверьте схему вашей модели.`);
+  if (slide.mount === 'concealed' && side > 16) {
+    warnings.push(`${m.name}: боковины ящиков ${side} мм — сделайте запил ${side - 16} мм по низу под скрытые направляющие.`);
   }
 
   const fronts = Array.from({ length: n }, (_, i) => ({ x: g, y: g + i * (frontH + g), w: frontW, h: frontH }));
@@ -94,11 +95,11 @@ export function drawerLayout(m: DrawerModule, project: Project, slide: SlideSpec
     fronts.forEach((f, i) => {
       const k = i + 1;
       const name = (s: string) => `Ящик ${k}: ${s}`;
-      parts.push(part(`${m.id}:dfront:${k}`, m.name, name('фасад'), f.w, f.h, t, project.material, [e, e, e, e]));
-      for (const s of [1, 2]) parts.push(part(`${m.id}:dside:${k}-${s}`, m.name, name(s === 1 ? 'бок левый' : 'бок правый'), length, boxH, side, project.material, [e, 0, 0, 0]));
-      parts.push(part(`${m.id}:dfb:${k}-1`, m.name, name('лоб короба'), inner, boxH, side, project.material, [e, 0, 0, 0]));
-      parts.push(part(`${m.id}:dfb:${k}-2`, m.name, name('задняя стенка короба'), inner, boxH, side, project.material, [e, 0, 0, 0]));
-      parts.push(part(`${m.id}:dbottom:${k}`, m.name, name('дно'), length, outer, BOX.bottom, BOTTOM_MATERIAL, [0, 0, 0, 0]));
+      parts.push(makePart(`${m.id}:dfront:${k}`, m.name, name('фасад'), f.w, f.h, t, project.material, [e, e, e, e]));
+      for (const s of [1, 2]) parts.push(makePart(`${m.id}:dside:${k}-${s}`, m.name, name(s === 1 ? 'бок левый' : 'бок правый'), length, boxH, side, project.material, [e, 0, 0, 0]));
+      parts.push(makePart(`${m.id}:dfb:${k}-1`, m.name, name('лоб короба'), inner, boxH, side, project.material, [e, 0, 0, 0]));
+      parts.push(makePart(`${m.id}:dfb:${k}-2`, m.name, name('задняя стенка короба'), inner, boxH, side, project.material, [e, 0, 0, 0]));
+      parts.push(makePart(`${m.id}:dbottom:${k}`, m.name, name('дно'), length, outer, BOX.bottom, BOTTOM_MATERIAL, [0, 0, 0, 0]));
     });
   }
   return { errors, warnings, fronts, box: { x: t + (opening - outer) / 2, w: outer, inner, h: boxH, length, slide: slideL, side }, parts };

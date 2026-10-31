@@ -103,7 +103,7 @@ export default function Settings({
         <h2>Направляющие ящиков</h2>
         <p className="small muted">
           Своя модель для каждого класса фурнитуры. Вычеты возьмите из схемы производителя.
-          Blum Movento/Tandem: короб внутри = проём − 42, длина = направляющая − 10.
+          Скрытые (Blum, Hettich, GIFF PRIME): короб внутри = проём − 42, длина = направляющая − 10; боковины 18 мм — с запилом 2 мм по низу.
         </p>
         <div className="slides">
           {(Object.keys(tierInfo) as Tier[]).map((t) => {

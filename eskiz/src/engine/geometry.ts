@@ -3,7 +3,8 @@
 import type { Project } from './furniture';
 import { frontCount, hasRails, moduleLayout } from './kitchen';
 import type { DoorsResult } from './doors';
-import { drawerLayout, type DrawerModule, type SlideSpec } from './drawers';
+import { drawerLayout, type SlideSpec } from './drawers';
+import { cornerFronts, ROW_OFFSET, type KitchenModule, type WallRow } from './corner';
 
 export type Role = 'body' | 'back' | 'front' | 'mirror' | 'glass' | 'metal' | 'worktop' | 'plinth' | 'handle' | 'wall';
 
@@ -19,6 +20,8 @@ export interface Box {
   pull?: number;
   /** Ручка, вставка или короб принадлежит двери/ящику с этим индексом и двигается вместе с ним. */
   door?: number;
+  /** Деталь второй стены угловой кухни: координаты — в системе этого ряда (см. worldBox). */
+  frame?: string;
 }
 
 export interface Scene {
@@ -26,6 +29,10 @@ export interface Scene {
   width: number;
   height: number;
   depth: number;
+  /** Габариты в мировых координатах (с учётом второй стены). */
+  bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
+  /** Ряды второй стены: повёрнуты на 90° вокруг вертикали. */
+  frames?: Record<string, WallRow>;
   /** Цвет профиля купе (серебро, шампань…). */
   profileColor?: string;
 }
@@ -33,105 +40,151 @@ export interface Scene {
 type Add = (b: Box) => number;
 
 export function buildScene(project: Project, opts: { doors?: boolean; worktop?: boolean; sliding?: DoorsResult; profileColor?: string; slide?: SlideSpec } = {}): Scene {
-  const doors = opts.doors ?? true;
   const boxes: Box[] = [];
-  const layout = moduleLayout(project.modules);
-  const t = project.thickness;
+  const modules = project.modules as KitchenModule[];
+  const frames: Record<string, WallRow> = {};
 
-  for (const item of [...layout.items].sort((a, b) => b.z - a.z || a.x - b.x)) {
-    const m = item.m;
-    const ox = item.x;
-    const oy = item.y;
-    const oz = item.z;
-    const add = (b: Box) => {
-      if (b.w > 0 && b.h > 0 && b.d > 0) boxes.push({ ...b, x: b.x + ox, y: b.y + oy, z: b.z + oz });
-      return boxes.length - 1;
-    };
-    const bay = (m.width - (m.sections + 1) * t) / m.sections;
-    const inside = m.height - 2 * t;
-    const reserve = m.sliding?.reserve ?? 0;
-
-    // Порядок важен для плоской картинки: сначала дальние детали, потом ближние.
-    if (m.back) add({ x: 1, y: 1, z: m.depth, w: m.width - 2, h: m.height - 2, d: 3, role: 'back' });
-    add({ x: 0, y: 0, z: 0, w: t, h: m.height, d: m.depth, role: 'body' });
-    add({ x: t, y: 0, z: 0, w: m.width - 2 * t, h: t, d: m.depth, role: 'body' });
-    for (let j = 0; j < m.sections; j++) {
-      const bx = t + j * (bay + t);
-      if (j > 0) add({ x: bx - t, y: t, z: reserve, w: t, h: inside, d: m.depth - reserve, role: 'body' });
-      for (let k = 0; k < m.shelves; k++) {
-        const y = t + ((k + 1) * (inside - t)) / (m.shelves + 1);
-        add({ x: bx + 1, y, z: 20 + reserve, w: bay - 2, h: t, d: m.depth - 20 - reserve, role: 'body' });
-      }
-    }
-    add({ x: m.width - t, y: 0, z: 0, w: t, h: m.height, d: m.depth, role: 'body' });
-    if (hasRails(m)) {
-      const rail = m.kitchen!.railWidth;
-      add({ x: t, y: m.height - t, z: 0, w: m.width - 2 * t, h: t, d: rail, role: 'body' });
-      add({ x: t, y: m.height - t, z: m.depth - rail, w: m.width - 2 * t, h: t, d: rail, role: 'body' });
-    } else add({ x: t, y: m.height - t, z: 0, w: m.width - 2 * t, h: t, d: m.depth, role: 'body' });
-
-    // Кухня: цоколь под нижними шкафами и столешница сверху.
-    const kind = m.kitchen?.kind;
-    if (kind && kind !== 'wall' && oy > 0) add({ x: 0, y: -oy, z: 50, w: m.width, h: oy - 2, d: 16, role: 'plinth' });
-    if (opts.worktop && (kind === 'base' || kind === 'sink')) add({ x: 0, y: m.height, z: -t - 22, w: m.width, h: 38, d: m.depth + t + 22, role: 'worktop' });
-
-    if (doors && m.doors && !m.sliding) {
-      const n = frontCount(m);
-      const g = project.gap;
-      const dw = (m.width - (n + 1) * g) / n;
-      const dh = m.height - 2 * g;
-      for (let j = 0; j < n; j++) {
-        // Пары дверей открываются «от центра»: левая — на левых петлях, правая — на правых.
-        // Непарная последняя дверь — на правых петлях, чтобы не задевать соседку.
-        const hinge: 'left' | 'right' = n === 1 ? 'left' : j % 2 === 1 || j === n - 1 ? 'right' : 'left';
-        const x = g + j * (dw + g);
-        const idx = add({ x, y: g, z: -t, w: dw, h: dh, d: t, role: 'front', hinge });
-        // Ручка у свободного края; у верхних шкафов — внизу, у остальных — на удобной высоте.
-        const hx = hinge === 'left' ? x + dw - 40 : x + 28;
-        const hh = Math.min(160, dh * 0.3);
-        const hy = kind === 'wall' ? g + 40 : hasRails(m) ? g + dh - hh - 40 : g + Math.max(40, Math.min(dh / 2, 1050 - oy)) - hh / 2;
-        add({ x: hx, y: hy, z: -t - 26, w: 12, h: hh, d: 26, role: 'handle', door: idx });
-      }
-    }
-
-    if (doors && m.sliding && opts.sliding) addSlidingDoors(add, t, t, opts.sliding);
-
-    const dm = m as DrawerModule;
-    if (doors && dm.drawers) {
-      const d = drawerLayout(dm, project, opts.slide);
-      if (!d.errors.length) {
-        d.fronts.forEach((f, i) => {
-          // Верхний ящик выезжает почти полностью, остальные — чуть: видно и короб, и ступеньки фасадов.
-          const pull = d.box.length * (i === d.fronts.length - 1 ? 0.7 : 0.2 + 0.1 * i);
-          // Короб добавляем раньше фасада (для плоской картинки), а привязываем к фасаду:
-          // его индекс известен заранее — после четырёх деталей короба.
-          const anchor = boxes.length + 4;
-          const L = d.box.length - 10;
-          const by = f.y + 15;
-          const bx = d.box.x;
-          const boxPart = (b: Omit<Box, 'pull' | 'door'>) => add({ ...b, pull, door: anchor });
-          boxPart({ x: bx, y: by - 3, z: 2, w: d.box.w, h: 3, d: L, role: 'back' });
-          const sd = d.box.side;
-          boxPart({ x: bx, y: by, z: 2 + L - sd, w: d.box.w, h: d.box.h, d: sd, role: 'body' });
-          boxPart({ x: bx, y: by, z: 2, w: sd, h: d.box.h, d: L, role: 'body' });
-          boxPart({ x: bx + d.box.w - sd, y: by, z: 2, w: sd, h: d.box.h, d: L, role: 'body' });
-          add({ x: f.x, y: f.y, z: -t, w: f.w, h: f.h, d: t, role: 'front', pull });
-          const hw = Math.min(160, f.w * 0.4);
-          add({ x: f.x + (f.w - hw) / 2, y: f.y + f.h / 2 - 6, z: -t - 26, w: hw, h: 12, d: 26, role: 'handle', pull, door: anchor });
-        });
-      }
+  // Стена A — в мировых координатах. Ряды стены B — каждый в своей системе (x — вдоль ряда от его
+  // дальнего от угла конца, z — вглубь от фасадов), потом поворачиваются (worldBox / Viewer3D).
+  const rows = new Map<string, KitchenModule[]>();
+  for (const m of modules) {
+    const key = m.row ? `B${m.kitchen?.kind === 'wall' ? 'up' : 'low'}` : 'A';
+    if (m.row) frames[key] = m.row;
+    rows.set(key, [...(rows.get(key) ?? []), m]);
+  }
+  for (const [key, list] of rows) {
+    const layout = moduleLayout(list);
+    for (const item of [...layout.items].sort((a, b) => b.z - a.z || a.x - b.x)) {
+      if (key === 'A') emitModule(item, project, opts, boxes);
+      else emitModule({ ...item, x: item.x - ROW_OFFSET }, project, opts, boxes, key);
     }
   }
 
-  const xs = boxes.flatMap((b) => [b.x, b.x + b.w]);
-  const ys = boxes.flatMap((b) => [b.y, b.y + b.h]);
+  const world = boxes.map((b) => worldBox(b, frames));
+  const bounds = {
+    minX: Math.min(0, ...world.map((b) => b.x)),
+    maxX: Math.max(0, ...world.map((b) => b.x + b.w)),
+    minZ: Math.min(0, ...world.map((b) => b.z)),
+    maxZ: Math.max(0, ...world.map((b) => b.z + b.d)),
+  };
+  // Подпись габаритов — по корпусам, без ручек, фасадов и столешницы.
+  const body = world.filter((b) => b.role === 'body');
+  const span = (lo: (b: Box) => number, hi: (b: Box) => number) => (body.length ? Math.max(...body.map(hi)) - Math.min(...body.map(lo)) : 0);
   return {
     boxes,
-    width: Math.round(Math.max(0, ...xs) - Math.min(0, ...xs)),
-    height: Math.round(Math.max(0, ...ys)),
-    depth: layout.depth,
+    width: Math.round(span((b) => b.x, (b) => b.x + b.w)),
+    height: Math.round(Math.max(0, ...world.map((b) => b.y + b.h))),
+    depth: Math.round(span((b) => b.z, (b) => b.z + b.d)),
+    bounds,
+    frames: Object.keys(frames).length ? frames : undefined,
     profileColor: opts.profileColor,
   };
+}
+
+/** Деталь в мировых координатах: детали второй стены поворачиваются на 90° (фасады смотрят вправо). */
+export function worldBox(b: Box, frames?: Record<string, WallRow>): Box {
+  const f = b.frame ? frames?.[b.frame] : undefined;
+  if (!f) return b;
+  return { ...b, x: f.depth - b.z - b.d, w: b.d, z: f.startZ - f.length + b.x, d: b.w, frame: undefined };
+}
+
+type Item = { m: KitchenModule; x: number; y: number; z: number };
+
+function emitModule(item: Item, project: Project, opts: { doors?: boolean; worktop?: boolean; sliding?: DoorsResult; slide?: SlideSpec }, boxes: Box[], frame?: string) {
+  const doors = opts.doors ?? true;
+  const t = project.thickness;
+  const m = item.m;
+  const ox = item.x;
+  const oy = item.y;
+  const oz = item.z;
+  const add = (b: Box) => {
+    if (b.w > 0 && b.h > 0 && b.d > 0) boxes.push({ ...b, x: b.x + ox, y: b.y + oy, z: b.z + oz, ...(frame ? { frame } : {}) });
+    return boxes.length - 1;
+  };
+  const bay = (m.width - (m.sections + 1) * t) / m.sections;
+  const inside = m.height - 2 * t;
+  const reserve = m.sliding?.reserve ?? 0;
+
+  // Порядок важен для плоской картинки: сначала дальние детали, потом ближние.
+  if (m.back) add({ x: 1, y: 1, z: m.depth, w: m.width - 2, h: m.height - 2, d: 3, role: 'back' });
+  add({ x: 0, y: 0, z: 0, w: t, h: m.height, d: m.depth, role: 'body' });
+  add({ x: t, y: 0, z: 0, w: m.width - 2 * t, h: t, d: m.depth, role: 'body' });
+  for (let j = 0; j < m.sections; j++) {
+    const bx = t + j * (bay + t);
+    if (j > 0) add({ x: bx - t, y: t, z: reserve, w: t, h: inside, d: m.depth - reserve, role: 'body' });
+    for (let k = 0; k < m.shelves; k++) {
+      const y = t + ((k + 1) * (inside - t)) / (m.shelves + 1);
+      add({ x: bx + 1, y, z: 20 + reserve, w: bay - 2, h: t, d: m.depth - 20 - reserve, role: 'body' });
+    }
+  }
+  add({ x: m.width - t, y: 0, z: 0, w: t, h: m.height, d: m.depth, role: 'body' });
+  if (hasRails(m)) {
+    const rail = m.kitchen!.railWidth;
+    add({ x: t, y: m.height - t, z: 0, w: m.width - 2 * t, h: t, d: rail, role: 'body' });
+    add({ x: t, y: m.height - t, z: m.depth - rail, w: m.width - 2 * t, h: t, d: rail, role: 'body' });
+  } else add({ x: t, y: m.height - t, z: 0, w: m.width - 2 * t, h: t, d: m.depth, role: 'body' });
+
+  // Кухня: цоколь под нижними шкафами и столешница сверху.
+  const kind = m.kitchen?.kind;
+  if (kind && kind !== 'wall' && oy > 0) add({ x: 0, y: -oy, z: 50, w: m.width, h: oy - 2, d: 16, role: 'plinth' });
+  if (opts.worktop && (kind === 'base' || kind === 'sink')) add({ x: 0, y: m.height, z: -t - 22, w: m.width, h: 38, d: m.depth + t + 22, role: 'worktop' });
+
+  const handle = (x: number, dw: number, dh: number, hinge: 'left' | 'right', idx: number) => {
+    // Ручка у свободного края; у верхних шкафов — внизу, у остальных — на удобной высоте.
+    const g = project.gap;
+    const hx = hinge === 'left' ? x + dw - 40 : x + 28;
+    const hh = Math.min(160, dh * 0.3);
+    const hy = kind === 'wall' ? g + 40 : hasRails(m) ? g + dh - hh - 40 : g + Math.max(40, Math.min(dh / 2, 1050 - oy)) - hh / 2;
+    add({ x: hx, y: hy, z: -t - 26, w: 12, h: hh, d: 26, role: 'handle', door: idx });
+  };
+
+  if (doors && m.blind) {
+    // Глухой угловой: фальш-панель у угла и дверь на правых петлях (открывается от угла).
+    const f = cornerFronts(m, project);
+    add({ x: f.panel.x, y: f.panel.y, z: -t, w: f.panel.w, h: f.panel.h, d: t, role: 'front' });
+    const idx = add({ x: f.door.x, y: f.door.y, z: -t, w: f.door.w, h: f.door.h, d: t, role: 'front', hinge: 'right' });
+    handle(f.door.x, f.door.w, f.door.h, 'right', idx);
+  } else if (doors && m.doors && !m.sliding) {
+    const n = frontCount(m);
+    const g = project.gap;
+    const dw = (m.width - (n + 1) * g) / n;
+    const dh = m.height - 2 * g;
+    for (let j = 0; j < n; j++) {
+      // Пары дверей открываются «от центра»: левая — на левых петлях, правая — на правых.
+      // Непарная последняя дверь — на правых петлях, чтобы не задевать соседку.
+      const hinge: 'left' | 'right' = n === 1 ? 'left' : j % 2 === 1 || j === n - 1 ? 'right' : 'left';
+      const x = g + j * (dw + g);
+      const idx = add({ x, y: g, z: -t, w: dw, h: dh, d: t, role: 'front', hinge });
+      handle(x, dw, dh, hinge, idx);
+    }
+  }
+
+  if (doors && m.sliding && opts.sliding) addSlidingDoors(add, t, t, opts.sliding);
+
+  if (doors && m.drawers) {
+    const d = drawerLayout(m, project, opts.slide);
+    if (!d.errors.length) {
+      d.fronts.forEach((f, i) => {
+        // Верхний ящик выезжает почти полностью, остальные — чуть: видно и короб, и ступеньки фасадов.
+        const pull = d.box.length * (i === d.fronts.length - 1 ? 0.7 : 0.2 + 0.1 * i);
+        // Короб добавляем раньше фасада (для плоской картинки), а привязываем к фасаду:
+        // его индекс известен заранее — после четырёх деталей короба.
+        const anchor = boxes.length + 4;
+        const L = d.box.length - 10;
+        const by = f.y + 15;
+        const bx = d.box.x;
+        const boxPart = (b: Omit<Box, 'pull' | 'door'>) => add({ ...b, pull, door: anchor });
+        boxPart({ x: bx, y: by - 3, z: 2, w: d.box.w, h: 3, d: L, role: 'back' });
+        const sd = d.box.side;
+        boxPart({ x: bx, y: by, z: 2 + L - sd, w: d.box.w, h: d.box.h, d: sd, role: 'body' });
+        boxPart({ x: bx, y: by, z: 2, w: sd, h: d.box.h, d: L, role: 'body' });
+        boxPart({ x: bx + d.box.w - sd, y: by, z: 2, w: sd, h: d.box.h, d: L, role: 'body' });
+        add({ x: f.x, y: f.y, z: -t, w: f.w, h: f.h, d: t, role: 'front', pull });
+        const hw = Math.min(160, f.w * 0.4);
+        add({ x: f.x + (f.w - hw) / 2, y: f.y + f.h / 2 - 6, z: -t - 26, w: hw, h: 12, d: 26, role: 'handle', pull, door: anchor });
+      });
+    }
+  }
 }
 
 /** Двери купе в проёме: x0, y0 — левый нижний угол чистового проёма. */
@@ -193,5 +246,5 @@ export function nicheScene(size: { width: number; height: number; depth: number 
   addSlidingDoors(add, 0, 0, r);
   add({ x: W, y: 0, z: -10, w: wall, h: H + wall, d: D + 30, role: 'wall' });
   add({ x: 0, y: H, z: -10, w: W, h: wall, d: D + 30, role: 'wall' });
-  return { boxes, width: W + 2 * wall, height: H + wall, depth: D, profileColor };
+  return { boxes, width: W + 2 * wall, height: H + wall, depth: D, bounds: { minX: -wall, maxX: W + wall, minZ: -10, maxZ: D + 20 }, profileColor };
 }

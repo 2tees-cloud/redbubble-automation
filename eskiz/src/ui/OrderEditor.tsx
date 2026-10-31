@@ -31,6 +31,7 @@ export default function OrderEditor({
   const lim = order.kind !== 'kitchen' ? sizeLimits[order.kind] : null;
   const canPrice = quote && quote.ok;
   const sliding = order.kind === 'coupe' || order.kind === 'doors';
+  const corner = order.kind === 'kitchen' && order.kitchen.shape === 'corner';
 
   return (
     <div className="editor">
@@ -55,10 +56,22 @@ export default function OrderEditor({
             </div>
           ) : (
             <>
+              <Choice
+                label="Форма кухни"
+                value={order.kitchen.shape}
+                options={{ straight: { title: 'Прямая', hint: 'Вдоль одной стены' }, corner: { title: 'Угловая «Г»', hint: 'Две стены, угол слева' } }}
+                onChange={(shape) => kitchen({ shape })}
+              />
               <div className="row2">
-                <NumberField label="Длина низа" value={order.kitchen.bottomLength} min={600} max={7000} onChange={(v) => kitchen({ bottomLength: v })} hint="Вдоль стены, вместе с мойкой и пеналами" />
-                <NumberField label="Длина верха" value={order.kitchen.topLength} min={0} max={kitchenFreeTop(order)} onChange={(v) => kitchen({ topLength: v })} hint="0 — без верхних шкафов" />
+                <NumberField label={corner ? 'Стена 1 (с мойкой): низ' : 'Длина низа'} value={order.kitchen.bottomLength} min={600} max={7000} onChange={(v) => kitchen({ bottomLength: v })} hint={corner ? 'От угла, вместе с угловым шкафом, мойкой и пеналами' : 'Вдоль стены, вместе с мойкой и пеналами'} />
+                <NumberField label={corner ? 'Стена 1: верх' : 'Длина верха'} value={order.kitchen.topLength} min={0} max={kitchenFreeTop(order)} onChange={(v) => kitchen({ topLength: v })} hint="0 — без верхних шкафов" />
               </div>
+              {corner && (
+                <div className="row2">
+                  <NumberField label="Стена 2: низ" value={order.kitchen.sideLength} min={900} max={5000} onChange={(v) => kitchen({ sideLength: v })} hint="От угла. Первые 600 мм занимает угловой шкаф" />
+                  <NumberField label="Стена 2: верх" value={order.kitchen.sideTop} min={0} max={order.kitchen.sideLength} onChange={(v) => kitchen({ sideTop: v })} hint="От угла; 0 — без верхних шкафов" />
+                </div>
+              )}
               <div className="row2">
                 <NumberField label="Пеналов (высоких шкафов)" unit="шт." value={order.kitchen.tallCount} min={0} max={3} onChange={(v) => kitchen({ tallCount: Math.round(v) })} hint="Под холодильник, духовку и т. п." />
                 <NumberField label="Тумб с ящиками" unit="шт." value={order.kitchen.drawerUnits} min={0} max={6} onChange={(v) => kitchen({ drawerUnits: Math.round(v) })} hint="По 3 ящика вместо дверцы и полки" />

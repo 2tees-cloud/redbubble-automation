@@ -17,7 +17,7 @@ describe('ящики', () => {
   });
 
   it('шариковые (боковой монтаж): короб снаружи = проём − 26, ЛДСП 18', () => {
-    const d = drawerLayout(mod({}), defaultProject, defaultSlides.eco);
+    const d = drawerLayout(mod({}), defaultProject, { name: 'Шариковые', mount: 'side', widthDeduct: 26, lengthDeduct: 0 });
     expect(d.errors).toEqual([]);
     // фасады: (720 − 4 × 2) / 3 = 237,33; ширина 600 − 4
     expect(d.fronts[0].h).toBeCloseTo(237.33, 2);
@@ -39,9 +39,9 @@ describe('ящики', () => {
     expect(d.box.w).toBe(558); // 522 + 2 × 18
     expect(d.box.length).toBe(490); // 500 − 10
     expect(d.parts.find((p) => p.id === 'm1:dfb:1-2')!.length).toBe(522);
-    expect(d.warnings.join()).toMatch(/до 16 мм/);
-    // GIFF PRIME (для 16–19 мм) — без предупреждения
-    expect(drawerLayout(mod({}), defaultProject, defaultSlides.standard).warnings).toEqual([]);
+    expect(d.warnings.join()).toMatch(/запил 2 мм/);
+    expect(defaultSlides.standard.name).toMatch(/Hettich/);
+    expect(defaultSlides.eco.name).toMatch(/GIFF PRIME/);
   });
 
   it('свои вычеты из настроек', () => {
@@ -65,7 +65,7 @@ describe('ящики в заказе', () => {
     expect(q.lines.find((l) => l.name === 'Ручки')?.qty).toBe(4);
     expect(q.lines.some((l) => l.name.includes('16 мм'))).toBe(false);
     expect(q.parts.filter((p) => p.id.includes(':dside:')).every((p) => p.thickness === 18)).toBe(true);
-    expect(q.lines.find((l) => l.name.startsWith('Направляющие ящиков'))?.name).toMatch(/GIFF PRIME/);
+    expect(q.lines.find((l) => l.name.startsWith('Направляющие ящиков'))?.name).toMatch(/Hettich/);
     expect(q.lines.find((l) => l.name === 'Петли')).toBeUndefined();
     expect(q.summary.join()).toMatch(/4 ящика/);
   });

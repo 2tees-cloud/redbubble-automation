@@ -3,6 +3,7 @@
 import { calculate, type Part, type Project } from './furniture';
 import { boardParts, calcDoors, colorNames, fillInfo, type DoorsResult } from './doors';
 import { defaultSlides, drawerLayout, type DrawerModule, type SlideSpec } from './drawers';
+import { cornerParts, type KitchenModule } from './corner';
 import { buildScene, nicheScene, type Scene } from './geometry';
 import { buildProject, type Facade, type Order, type Tier } from './order';
 
@@ -46,7 +47,7 @@ export const defaultPrices: PriceList = {
   edgingPerM: 22,
   facadeM2: { mdf_film: 2800, mdf_paint: 4800, acrylic: 4200 },
   hinge: { eco: 45, standard: 110, premium: 320 },
-  slidePair: { eco: 200, standard: 550, premium: 2400 },
+  slidePair: { eco: 550, standard: 1200, premium: 2400 },
   slides: defaultSlides,
   handle: { eco: 50, standard: 120, premium: 250 },
   leg: { eco: 20, standard: 35, premium: 70 },
@@ -111,7 +112,7 @@ export interface Quote {
 
 const role = (p: Part) => p.id.split(':')[1];
 // Фасады: двери и лицевые панели ящиков. Короба ящиков — из ЛДСП корпуса, дно — ХДФ.
-const FRONT = new Set(['door', 'dfront']);
+const FRONT = new Set(['door', 'dfront', 'blind']);
 const THIN = new Set(['back', 'dbottom']);
 const area = (p: Part) => (p.length * p.width) / 1e6;
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -150,6 +151,9 @@ export function calcQuote(order: Order, prices: PriceList = defaultPrices): Quot
     drawerCount += d.errors.length ? 0 : m.drawers;
   }
 
+  // Угловые шкафы: дверь и фальш-панель (в старом расчёте корпуса у них нет фасадов).
+  for (const m of (project?.modules ?? []) as KitchenModule[]) parts.push(...cornerParts(m, project!));
+
   const doorParts = parts.filter((p) => role(p) === 'door');
   const frontParts = parts.filter((p) => FRONT.has(role(p)));
   const ldspFronts = order.facade === 'ldsp';
@@ -181,7 +185,7 @@ export function calcQuote(order: Order, prices: PriceList = defaultPrices): Quot
   const legs = kitchenModules.filter((m) => m.kitchen!.kind !== 'wall').length * 4;
   const hangers = kitchenModules.filter((m) => m.kitchen!.kind === 'wall').length * 2;
   add('Фурнитура', 'Петли', hinges, 'шт.', prices.hinge[tier]);
-  add('Фурнитура', 'Ручки', frontParts.length, 'шт.', prices.handle[tier]);
+  add('Фурнитура', 'Ручки', parts.filter((p) => role(p) === 'door' || role(p) === 'dfront').length, 'шт.', prices.handle[tier]);
   add('Фурнитура', `Направляющие ящиков: ${slide.name}, пара`, drawerCount, 'ящик', prices.slidePair[tier]);
   add('Фурнитура', 'Полкодержатели', shelves * 4, 'шт.', prices.shelfSupport[tier]);
   add('Фурнитура', 'Ножки регулируемые', legs, 'шт.', prices.leg[tier]);

@@ -27,7 +27,7 @@ describe('простой заказ → корпуса', () => {
     expect(q.lines.find((l) => l.name.startsWith('Система'))?.qty).toBe(3);
   });
   it('кухня без наложений, мойка и пенал', () => {
-    const q = calcQuote(order({ kind: 'kitchen', kitchen: { bottomLength: 3000, topLength: 2400, sink: true, tallCount: 1, worktop: true, drawerUnits: 0 } }));
+    const q = calcQuote(order({ kind: 'kitchen', kitchen: { shape: 'straight', sideLength: 1800, sideTop: 0, bottomLength: 3000, topLength: 2400, sink: true, tallCount: 1, worktop: true, drawerUnits: 0 } }));
     expect(q.problems).toEqual([]);
     const kinds = q.project!.modules.map((m) => m.kitchen?.kind);
     expect(kinds.filter((k) => k === 'sink')).toHaveLength(1);
@@ -35,7 +35,7 @@ describe('простой заказ → корпуса', () => {
     expect(q.lines.find((l) => l.name === 'Столешница')?.qty).toBe(2.4);
   });
   it('узкий остаток отдаётся мойке', () => {
-    const q = calcQuote(order({ kind: 'kitchen', kitchen: { bottomLength: 1000, topLength: 0, sink: true, tallCount: 0, worktop: false, drawerUnits: 0 } }));
+    const q = calcQuote(order({ kind: 'kitchen', kitchen: { shape: 'straight', sideLength: 1800, sideTop: 0, bottomLength: 1000, topLength: 0, sink: true, tallCount: 0, worktop: false, drawerUnits: 0 } }));
     expect(q.problems).toEqual([]);
     expect(q.project!.modules.map((m) => m.width)).toEqual([1000]);
   });
@@ -48,7 +48,7 @@ describe('простой заказ → корпуса', () => {
       }
     }
     for (const bottomLength of [800, 1200, 1900, 2400, 3600, 5000]) for (const tallCount of [0, 1, 2]) for (const sink of [true, false]) {
-      const o = order({ kind: 'kitchen', kitchen: { bottomLength, topLength: 1200, sink, tallCount, worktop: true, drawerUnits: 0 } });
+      const o = order({ kind: 'kitchen', kitchen: { shape: 'straight', sideLength: 1800, sideTop: 0, bottomLength, topLength: 1200, sink, tallCount, worktop: true, drawerUnits: 0 } });
       o.kitchen.topLength = Math.min(1200, Math.max(0, bottomLength - 600 * tallCount));
       if (checkOrder(o).length) continue;
       expect(calcQuote(o).problems, `kitchen ${bottomLength} ${tallCount} ${sink}`).toEqual([]);

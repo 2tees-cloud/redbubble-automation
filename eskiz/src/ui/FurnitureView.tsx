@@ -1,6 +1,6 @@
 // Плоская объёмная картинка (SVG). Нужна для печати/PDF и как запасной вид, если нет 3D.
 import { useId, useMemo } from 'react';
-import type { Role, Scene } from '../engine/geometry';
+import { worldBox, type Role, type Scene } from '../engine/geometry';
 import { colorInfo, type Color } from '../engine/order';
 
 type Point = [number, number, number];
@@ -25,7 +25,12 @@ export default function FurnitureView({ scene, color, angle = 24 }: { scene: Sce
 
   const faces = useMemo(() => {
     const out: Face[] = [];
-    for (const b of scene.boxes) {
+    // Стена A уже идёт в правильном порядке. Детали повёрнутой стены B рисуем от дальних к ближним:
+    // их фасады смотрят вправо, поэтому ближе к зрителю — больше x и меньше z.
+    const near = (b: typeof scene.boxes[number]) => b.x + b.w / 2 - (b.z + b.d / 2);
+    const plain = scene.boxes.filter((x) => !x.frame);
+    const turned = scene.boxes.filter((x) => x.frame).map((x) => worldBox(x, scene.frames)).sort((a, b) => near(a) - near(b));
+    for (const b of [...plain, ...turned]) {
       const { x, y, z, w, h, d } = b;
       const tone = b.role === 'back' ? 0.78 : b.role === 'plinth' ? 0.7 : 1;
       out.push({ points: [[x, y, z], [x + w, y, z], [x + w, y + h, z], [x, y + h, z]], tone: tone * 1.03, role: b.role });
@@ -47,6 +52,7 @@ export default function FurnitureView({ scene, color, angle = 24 }: { scene: Sce
     return `${p[0] * scale + tx},${p[1] * scale + ty}`;
   };
   const tint = (r: Role) => (r === 'metal' && scene.profileColor ? scene.profileColor : fixed[r] ?? base);
+  const bb = scene.bounds;
   const colorOf = (f: Face) => shade(tint(f.role), f.tone);
 
   return (
@@ -66,7 +72,7 @@ export default function FurnitureView({ scene, color, angle = 24 }: { scene: Sce
         </defs>
         <rect width="820" height="540" fill={`url(#${uid}room)`} />
         <polygon
-          points={[floor(0, -20), floor(scene.width + 160, -20), floor(scene.width + 160, scene.depth + 130), floor(0, scene.depth + 130)].join(' ')}
+          points={[floor(bb.minX, bb.minZ - 20), floor(bb.maxX + 160, bb.minZ - 20), floor(bb.maxX + 160, bb.maxZ + 130), floor(bb.minX, bb.maxZ + 130)].join(' ')}
           fill="#4c4639" opacity=".2" filter={`url(#${uid}blur)`}
         />
         <g transform={`translate(${tx} ${ty}) scale(${scale})`}>

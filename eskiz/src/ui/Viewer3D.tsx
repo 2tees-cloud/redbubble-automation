@@ -229,6 +229,16 @@ export default function Viewer3D(props: Props) {
     // так дочерняя деталь может стоять в списке раньше своей двери или фасада.
     const isAnchor = (b: Box) => b.door === undefined && (!!b.hinge || b.slide !== undefined || b.pull !== undefined);
     const groups = new Map<number, THREE.Group>();
+    // Ряды второй стены угловой кухни: своя повёрнутая на 90° группа (см. worldBox в geometry.ts).
+    const containers = new Map<string, THREE.Group>();
+    for (const [id, f] of Object.entries(sc.frames ?? {})) {
+      const c = new THREE.Group();
+      c.rotation.y = Math.PI / 2;
+      c.position.set(f.depth * MM, 0, (f.length - f.startZ) * MM);
+      w.furniture.add(c);
+      containers.set(id, c);
+    }
+    const holder = (b: Box) => (b.frame ? containers.get(b.frame) : undefined) ?? w.furniture;
     sc.boxes.forEach((b, i) => {
       if (!isAnchor(b)) return;
       // Поворот вокруг петель: ось у заднего края двери со стороны петель.
@@ -241,7 +251,7 @@ export default function Viewer3D(props: Props) {
       const m = mesh(b);
       m.position.copy(center(b).sub(pivot));
       g.add(m);
-      w.furniture.add(g);
+      holder(b).add(g);
       groups.set(i, g);
       w.movers.push({ group: g, box: b });
     });
@@ -254,11 +264,12 @@ export default function Viewer3D(props: Props) {
         g.add(m);
       } else {
         m.position.copy(center(b));
-        w.furniture.add(m);
+        holder(b).add(m);
       }
     });
     // Мебель стоит по центру сцены.
-    w.furniture.position.set((-sc.width / 2) * MM, 0, (sc.depth / 2) * MM);
+    const bb = sc.bounds;
+    w.furniture.position.set((-(bb.minX + bb.maxX) / 2) * MM, 0, ((bb.minZ + bb.maxZ) / 2) * MM);
     w.furniture.updateMatrixWorld(true);
 
     const key = `${sc.width}x${sc.height}x${sc.depth}`;
