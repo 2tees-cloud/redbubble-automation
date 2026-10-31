@@ -2,7 +2,7 @@
 // Вся фурнитура подбирается автоматически по правилам ниже.
 import { calculate, type Part, type Project } from './furniture';
 import { boardParts, calcDoors, colorNames, fillInfo, type DoorsResult } from './doors';
-import { drawerLayout, slideInfo, type DrawerModule } from './drawers';
+import { defaultSlides, drawerLayout, type DrawerModule, type SlideSpec } from './drawers';
 import { buildScene, nicheScene, type Scene } from './geometry';
 import { buildProject, type Facade, type Order, type Tier } from './order';
 
@@ -10,7 +10,6 @@ export type TierPrices = Record<Tier, number>;
 
 export interface PriceList {
   ldspSheet: number; // ЛДСП 18 мм, лист 2800×2070
-  ldsp16Sheet: number; // ЛДСП 16 мм для коробов ящиков
   hdfSheet: number; // ХДФ 3 мм, лист 2800×2070
   edgePerM: number; // кромка, материал
   cutPerSheet: number; // порезка листа
@@ -18,6 +17,7 @@ export interface PriceList {
   facadeM2: Record<Exclude<Facade, 'ldsp'>, number>;
   hinge: TierPrices;
   slidePair: TierPrices; // направляющие на один ящик (пара)
+  slides: Record<Tier, SlideSpec>; // какие направляющие и их вычеты — по классу фурнитуры
   handle: TierPrices;
   leg: TierPrices;
   hanger: TierPrices;
@@ -40,14 +40,14 @@ export interface PriceList {
 
 export const defaultPrices: PriceList = {
   ldspSheet: 2100,
-  ldsp16Sheet: 1800,
   hdfSheet: 450,
   edgePerM: 18,
   cutPerSheet: 250,
   edgingPerM: 22,
   facadeM2: { mdf_film: 2800, mdf_paint: 4800, acrylic: 4200 },
   hinge: { eco: 45, standard: 110, premium: 320 },
-  slidePair: { eco: 150, standard: 380, premium: 1600 },
+  slidePair: { eco: 200, standard: 550, premium: 2400 },
+  slides: defaultSlides,
   handle: { eco: 50, standard: 120, premium: 250 },
   leg: { eco: 20, standard: 35, premium: 70 },
   hanger: { eco: 30, standard: 60, premium: 150 },
@@ -110,9 +110,8 @@ export interface Quote {
 }
 
 const role = (p: Part) => p.id.split(':')[1];
-// Фасады: двери и лицевые панели ящиков. Короба ящиков — ЛДСП 16, дно — ХДФ.
+// Фасады: двери и лицевые панели ящиков. Короба ящиков — из ЛДСП корпуса, дно — ХДФ.
 const FRONT = new Set(['door', 'dfront']);
-const BOX16 = new Set(['dside', 'dfb']);
 const THIN = new Set(['back', 'dbottom']);
 const area = (p: Part) => (p.length * p.width) / 1e6;
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -140,11 +139,13 @@ export function calcQuote(order: Order, prices: PriceList = defaultPrices): Quot
   }
 
   // Ящики: детали добавляются к деталям корпусов.
+  const slide = prices.slides?.[tier] ?? defaultSlides[tier];
   let drawerCount = 0;
   for (const m of (project?.modules ?? []) as DrawerModule[]) {
     if (!m.drawers) continue;
-    const d = drawerLayout(m, project!, tier);
+    const d = drawerLayout(m, project!, slide);
     errors.push(...d.errors);
+    warnings.push(...d.warnings);
     parts.push(...d.parts);
     drawerCount += d.errors.length ? 0 : m.drawers;
   }
@@ -152,20 +153,17 @@ export function calcQuote(order: Order, prices: PriceList = defaultPrices): Quot
   const doorParts = parts.filter((p) => role(p) === 'door');
   const frontParts = parts.filter((p) => FRONT.has(role(p)));
   const ldspFronts = order.facade === 'ldsp';
-  const bodyParts = parts.filter((p) => !THIN.has(role(p)) && !BOX16.has(role(p)) && role(p) !== 'fill' && (!FRONT.has(role(p)) || ldspFronts));
-  const boxParts = parts.filter((p) => BOX16.has(role(p)));
+  const bodyParts = parts.filter((p) => !THIN.has(role(p)) && role(p) !== 'fill' && (!FRONT.has(role(p)) || ldspFronts));
   const backs = parts.filter((p) => THIN.has(role(p)));
 
   // Плита: площадь деталей с запасом на отходы, округляем вверх до целых листов.
   const use = Math.min(0.95, Math.max(0.5, prices.sheetUse));
   const ldspSheets = Math.ceil(bodyParts.reduce((a, p) => a + area(p), 0) / (SHEET_M2 * use));
   const hdfSheets = Math.ceil(backs.reduce((a, p) => a + area(p), 0) / (SHEET_M2 * Math.min(0.95, use + 0.1)));
-  const box16Sheets = Math.ceil(boxParts.reduce((a, p) => a + area(p), 0) / (SHEET_M2 * use));
-  const edgeM = Math.ceil([...bodyParts, ...boxParts].reduce((a, p) => a + p.edgeM, 0) * 1.1);
+  const edgeM = Math.ceil(bodyParts.reduce((a, p) => a + p.edgeM, 0) * 1.1);
   add('Плита и кромка', 'ЛДСП 18 мм, лист 2800×2070', ldspSheets, 'лист', prices.ldspSheet);
-  add('Плита и кромка', 'ЛДСП 16 мм для коробов ящиков, лист', box16Sheets, 'лист', prices.ldsp16Sheet);
   add('Плита и кромка', 'ХДФ: задние стенки и дно ящиков, лист', hdfSheets, 'лист', prices.hdfSheet);
-  add('Плита и кромка', 'Порезка', ldspSheets + box16Sheets + hdfSheets, 'лист', prices.cutPerSheet);
+  add('Плита и кромка', 'Порезка', ldspSheets + hdfSheets, 'лист', prices.cutPerSheet);
   add('Плита и кромка', 'Кромка (материал)', edgeM, 'м', prices.edgePerM);
   add('Плита и кромка', 'Кромкование (работа)', edgeM, 'м', prices.edgingPerM);
 
@@ -184,7 +182,7 @@ export function calcQuote(order: Order, prices: PriceList = defaultPrices): Quot
   const hangers = kitchenModules.filter((m) => m.kitchen!.kind === 'wall').length * 2;
   add('Фурнитура', 'Петли', hinges, 'шт.', prices.hinge[tier]);
   add('Фурнитура', 'Ручки', frontParts.length, 'шт.', prices.handle[tier]);
-  add('Фурнитура', `Направляющие ящиков (${slideInfo[tier].title}), пара`, drawerCount, 'ящик', prices.slidePair[tier]);
+  add('Фурнитура', `Направляющие ящиков: ${slide.name}, пара`, drawerCount, 'ящик', prices.slidePair[tier]);
   add('Фурнитура', 'Полкодержатели', shelves * 4, 'шт.', prices.shelfSupport[tier]);
   add('Фурнитура', 'Ножки регулируемые', legs, 'шт.', prices.leg[tier]);
   add('Фурнитура', 'Навесы для верхних шкафов', hangers, 'шт.', prices.hanger[tier]);
@@ -226,7 +224,7 @@ export function calcQuote(order: Order, prices: PriceList = defaultPrices): Quot
     summary.push(`Наполнение: ${fills.join(', ')}`);
     summary.push(`Профиль ADS, цвет ${colorNames[order.doors.color].title.toLowerCase()}`);
   }
-  if (drawerCount) summary.push(`${drawerCount} ${plural(drawerCount, 'ящик', 'ящика', 'ящиков')}: ${slideInfo[tier].title}`);
+  if (drawerCount) summary.push(`${drawerCount} ${plural(drawerCount, 'ящик', 'ящика', 'ящиков')}: ${slide.name}`);
   if (shelves) summary.push(`${shelves} ${plural(shelves, 'полка', 'полки', 'полок')}`);
   if (order.kind === 'kitchen' && order.kitchen.worktop) summary.push('Столешница');
   if (doors) summary.push({ eco: 'Раздвижная система эконом', standard: 'Раздвижная система стандарт', premium: 'Раздвижная система премиум' }[tier]);
@@ -236,7 +234,7 @@ export function calcQuote(order: Order, prices: PriceList = defaultPrices): Quot
 
   const worktop = order.kind === 'kitchen' && order.kitchen.worktop;
   const scene = project
-    ? buildScene(project, { worktop, sliding: doors, profileColor: colorNames[order.doors.color].swatch, tier })
+    ? buildScene(project, { worktop, sliding: doors, profileColor: colorNames[order.doors.color].swatch, slide })
     : nicheScene(order.size, doors!, colorNames[order.doors.color].swatch);
 
   return {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { drawerLayout, drawersFor, slideLength, type DrawerModule } from '../src/engine/drawers';
+import { defaultSlides, drawerLayout, drawersFor, slideLength, type DrawerModule } from '../src/engine/drawers';
 import { defaultProject } from '../src/engine/furniture';
 import { buildProject, newOrder, type Order } from '../src/engine/order';
 import { calcQuote, cuttingParts, facadeParts } from '../src/engine/pricing';
@@ -16,39 +16,56 @@ describe('ящики', () => {
     expect([400, 700, 900, 1300].map(drawersFor)).toEqual([2, 3, 4, 6]);
   });
 
-  it('тумба 600 × 720, 3 ящика, шариковые направляющие', () => {
-    const d = drawerLayout(mod({}), defaultProject, 'standard');
+  it('шариковые (боковой монтаж): короб снаружи = проём − 26, ЛДСП 18', () => {
+    const d = drawerLayout(mod({}), defaultProject, defaultSlides.eco);
     expect(d.errors).toEqual([]);
     // фасады: (720 − 4 × 2) / 3 = 237,33; ширина 600 − 4
     expect(d.fronts[0].h).toBeCloseTo(237.33, 2);
     expect(d.fronts[0].w).toBe(596);
-    // короб: внутренняя ширина 564 − 26 = 538; лоб/зад 538 − 32 = 506; высота 237,3 − 50
+    // проём 600 − 36 = 564; короб снаружи 538, внутри 538 − 36 = 502
     expect(d.box.w).toBe(538);
+    expect(d.box.inner).toBe(502);
     const front = d.parts.find((p) => p.id === 'm1:dfb:1-1')!;
-    expect(front.length).toBe(506);
+    expect(front).toMatchObject({ length: 502, thickness: 18 });
     expect(front.width).toBeCloseTo(187.3, 1);
     expect(d.parts.filter((p) => p.id.includes(':dside:'))).toHaveLength(6);
-    expect(d.parts.find((p) => p.id === 'm1:dside:1-1')!.length).toBe(500);
+    expect(d.parts.find((p) => p.id === 'm1:dside:1-1')).toMatchObject({ length: 500, thickness: 18 });
     expect(d.parts.find((p) => p.id === 'm1:dbottom:1')).toMatchObject({ length: 500, width: 538, thickness: 3 });
   });
 
-  it('Blum скрытого монтажа — короб шире (зазор 10 мм)', () => {
-    expect(drawerLayout(mod({}), defaultProject, 'premium').box.w).toBe(554);
+  it('скрытый монтаж Blum: короб внутри = проём − 42, длина = направляющая − 10', () => {
+    const d = drawerLayout(mod({}), defaultProject, defaultSlides.premium);
+    expect(d.box.inner).toBe(522); // 564 − 42
+    expect(d.box.w).toBe(558); // 522 + 2 × 18
+    expect(d.box.length).toBe(490); // 500 − 10
+    expect(d.parts.find((p) => p.id === 'm1:dfb:1-2')!.length).toBe(522);
+    expect(d.warnings.join()).toMatch(/до 16 мм/);
+    // GIFF PRIME (для 16–19 мм) — без предупреждения
+    expect(drawerLayout(mod({}), defaultProject, defaultSlides.standard).warnings).toEqual([]);
+  });
+
+  it('свои вычеты из настроек', () => {
+    const d = drawerLayout(mod({}), defaultProject, { name: 'Hettich Quadro', mount: 'concealed', widthDeduct: 40, lengthDeduct: 5 });
+    expect(d.box.inner).toBe(524);
+    expect(d.box.length).toBe(495);
   });
 
   it('понятные ошибки', () => {
-    expect(drawerLayout(mod({ drawers: 6, height: 400 }), defaultProject, 'eco').errors.join()).toMatch(/слишком много ящиков/);
-    expect(drawerLayout(mod({ depth: 250 }), defaultProject, 'eco').errors.join()).toMatch(/глубина/);
+    expect(drawerLayout(mod({ drawers: 6, height: 400 }), defaultProject, defaultSlides.eco).errors.join()).toMatch(/слишком много ящиков/);
+    expect(drawerLayout(mod({ depth: 250 }), defaultProject, defaultSlides.eco).errors.join()).toMatch(/глубина/);
+    expect(drawerLayout(mod({}), defaultProject, { ...defaultSlides.premium, widthDeduct: 0 }).errors.join()).toMatch(/шире проёма/);
   });
 });
 
 describe('ящики в заказе', () => {
-  it('комод 1000 × 900: 4 ящика, направляющие, короба из ЛДСП 16', () => {
+  it('комод 1000 × 900: 4 ящика, направляющие, короба из ЛДСП 18', () => {
     const q = calcQuote(order({ kind: 'dresser', size: { width: 1000, height: 900, depth: 450 } }));
     expect(q.problems).toEqual([]);
     expect(q.lines.find((l) => l.name.startsWith('Направляющие ящиков'))?.qty).toBe(4);
     expect(q.lines.find((l) => l.name === 'Ручки')?.qty).toBe(4);
-    expect(q.lines.find((l) => l.name.startsWith('ЛДСП 16'))?.qty).toBeGreaterThan(0);
+    expect(q.lines.some((l) => l.name.includes('16 мм'))).toBe(false);
+    expect(q.parts.filter((p) => p.id.includes(':dside:')).every((p) => p.thickness === 18)).toBe(true);
+    expect(q.lines.find((l) => l.name.startsWith('Направляющие ящиков'))?.name).toMatch(/GIFF PRIME/);
     expect(q.lines.find((l) => l.name === 'Петли')).toBeUndefined();
     expect(q.summary.join()).toMatch(/4 ящика/);
   });
@@ -66,12 +83,12 @@ describe('ящики в заказе', () => {
     expect(q.parts.filter((p) => p.id.startsWith(`${m.id}:dfront`))).toHaveLength(3);
   });
 
-  it('МДФ: фасады ящиков к фасадчикам, короба — в ВіЯр отдельными файлами', () => {
+  it('МДФ: фасады ящиков к фасадчикам, короба — в общий файл ЛДСП 18', () => {
     const o = order({ kind: 'dresser', facade: 'mdf_paint', size: { width: 1000, height: 900, depth: 450 } });
     const q = calcQuote(o);
     expect(facadeParts(o, q.parts).every((p) => p.id.includes(':dfront:'))).toBe(true);
     expect(facadeParts(o, q.parts)).toHaveLength(4);
-    expect(viyarGroups(cuttingParts(o, q.parts)).map((g) => g.thickness).sort((a, b) => a - b)).toEqual([3, 16, 18]);
+    expect(viyarGroups(cuttingParts(o, q.parts)).map((g) => g.thickness).sort((a, b) => a - b)).toEqual([3, 18]);
     expect(q.lines.find((l) => l.group === 'Фасады')).toBeDefined();
   });
 

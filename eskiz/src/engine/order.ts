@@ -48,8 +48,8 @@ export const facadeInfo: Record<Facade, { title: string; hint: string }> = {
 };
 
 export const tierInfo: Record<Tier, { title: string; hint: string }> = {
-  eco: { title: 'Эконом', hint: 'Простые петли, роликовые направляющие' },
-  standard: { title: 'Стандарт', hint: 'Доводчики, шариковые направляющие' },
+  eco: { title: 'Эконом', hint: 'Простые петли, шариковые направляющие' },
+  standard: { title: 'Стандарт', hint: 'Доводчики, скрытые направляющие GIFF PRIME' },
   premium: { title: 'Премиум', hint: 'Blum — тихо и надолго' },
 };
 

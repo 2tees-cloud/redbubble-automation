@@ -1,6 +1,7 @@
 import { defaultPrices, type PriceList, type TierPrices } from '../engine/pricing';
 import type { Tier } from '../engine/order';
 import { tierInfo } from '../engine/order';
+import { defaultSlides, mountInfo, type Mount, type SlideSpec } from '../engine/drawers';
 import type { Company } from '../storage';
 import { NumberField, TextField } from './fields';
 
@@ -9,7 +10,6 @@ type TierKey = { [K in keyof PriceList]: PriceList[K] extends TierPrices ? K : n
 
 const plate: [NumKey, string, string][] = [
   ['ldspSheet', 'ЛДСП 18 мм, лист 2800×2070', 'грн'],
-  ['ldsp16Sheet', 'ЛДСП 16 мм для коробов ящиков, лист', 'грн'],
   ['hdfSheet', 'ХДФ 3 мм, лист', 'грн'],
   ['cutPerSheet', 'Порезка, за лист', 'грн'],
   ['edgePerM', 'Кромка, материал', 'грн/м'],
@@ -32,7 +32,6 @@ const business: [NumKey, string, string][] = [
 ];
 const tiers: [TierKey, string][] = [
   ['hinge', 'Петля'],
-  ['slidePair', 'Направляющие на 1 ящик (пара)'],
   ['handle', 'Ручка'],
   ['leg', 'Ножка кухонная'],
   ['hanger', 'Навес для верхнего шкафа'],
@@ -97,6 +96,41 @@ export default function Settings({
               ))}
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="card-block">
+        <h2>Направляющие ящиков</h2>
+        <p className="small muted">
+          Своя модель для каждого класса фурнитуры. Вычеты возьмите из схемы производителя.
+          Blum Movento/Tandem: короб внутри = проём − 42, длина = направляющая − 10.
+        </p>
+        <div className="slides">
+          {(Object.keys(tierInfo) as Tier[]).map((t) => {
+            const sl: SlideSpec = prices.slides?.[t] ?? defaultSlides[t];
+            const setSlide = (patch: Partial<SlideSpec>) => onPrices({ ...prices, slides: { ...prices.slides, [t]: { ...sl, ...patch } } });
+            return (
+              <div className="slide-card" key={t}>
+                <b>{tierInfo[t].title}</b>
+                <TextField label="Модель" value={sl.name} onChange={(name) => setSlide({ name })} />
+                <div className="field">
+                  <label htmlFor={`mount-${t}`}>Монтаж</label>
+                  <select id={`mount-${t}`} value={sl.mount} onChange={(e) => setSlide({ mount: e.target.value as Mount })}>
+                    {(Object.keys(mountInfo) as Mount[]).map((m) => <option key={m} value={m}>{mountInfo[m]}</option>)}
+                  </select>
+                </div>
+                <div className="row2">
+                  <NumberField
+                    label={sl.mount === 'side' ? 'Короб снаружи = проём −' : 'Короб внутри = проём −'}
+                    min={0} max={100} value={sl.widthDeduct}
+                    onChange={(widthDeduct) => setSlide({ widthDeduct })}
+                  />
+                  <NumberField label="Длина короба = направляющая −" min={0} max={50} value={sl.lengthDeduct} onChange={(lengthDeduct) => setSlide({ lengthDeduct })} />
+                </div>
+                <NumberField label="Цена за пару (на 1 ящик)" unit="грн" min={0} value={prices.slidePair[t]} onChange={(v) => onPrices({ ...prices, slidePair: { ...prices.slidePair, [t]: v } })} />
+              </div>
+            );
+          })}
         </div>
       </section>
 

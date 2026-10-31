@@ -263,3 +263,9 @@ p.issues { padding-left: 14px; }
 .more summary { cursor: pointer; color: var(--primary); padding: 6px 0; }
 .more[open] { display: grid; gap: 10px; }
 .card-block h3 { font-size: 15px; margin-top: 4px; }
+
+/* Направляющие ящиков в настройках */
+.slides { display: grid; gap: 12px; }
+@media (min-width: 760px) { .slides { grid-template-columns: repeat(3, 1fr); } }
+.slide-card { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1.5px solid var(--line); border-radius: 12px; }
+.slide-card .row2 { grid-template-columns: 1fr 1fr; }
